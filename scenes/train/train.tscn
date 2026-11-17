@@ -1,0 +1,24 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/train/train.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/models/trains/train_1_0.glb" id="2_s0"]
+[ext_resource type="PackedScene" path="res://assets/models/trains/train_1_1.glb" id="3_s1"]
+[ext_resource type="PackedScene" path="res://assets/models/trains/train_1_2.glb" id="4_s2"]
+[ext_resource type="PackedScene" path="res://assets/models/trains/train_1_3.glb" id="5_s3"]
+[ext_resource type="PackedScene" path="res://assets/models/trains/train_1_4.glb" id="6_s4"]
+
+[node name="Train" type="Node3D"]
+script = ExtResource("1_script")
+capacity = 4
+
+[node name="Stages" type="Node3D" parent="."]
+
+[node name="Load0" parent="Stages" instance=ExtResource("2_s0")]
+
+[node name="Load1" parent="Stages" instance=ExtResource("3_s1")]
+
+[node name="Load2" parent="Stages" instance=ExtResource("4_s2")]
+
+[node name="Load3" parent="Stages" instance=ExtResource("5_s3")]
+
+[node name="Load4" parent="Stages" instance=ExtResource("6_s4")]

@@ -1,0 +1,36 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/train/train.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/models/trains/train_2_0.glb" id="s0"]
+[ext_resource type="PackedScene" path="res://assets/models/trains/train_2_1.glb" id="s1"]
+[ext_resource type="PackedScene" path="res://assets/models/trains/train_2_2.glb" id="s2"]
+[ext_resource type="PackedScene" path="res://assets/models/trains/train_2_3.glb" id="s3"]
+[ext_resource type="PackedScene" path="res://assets/models/trains/train_2_4.glb" id="s4"]
+[ext_resource type="PackedScene" path="res://assets/models/trains/train_2_5.glb" id="s5"]
+[ext_resource type="PackedScene" path="res://assets/models/trains/train_2_6.glb" id="s6"]
+[ext_resource type="PackedScene" path="res://assets/models/trains/train_2_7.glb" id="s7"]
+[ext_resource type="PackedScene" path="res://assets/models/trains/train_2_8.glb" id="s8"]
+
+[node name="TrainBig" type="Node3D"]
+script = ExtResource("1_script")
+capacity = 8
+
+[node name="Stages" type="Node3D" parent="."]
+
+[node name="Load0" parent="Stages" instance=ExtResource("s0")]
+
+[node name="Load1" parent="Stages" instance=ExtResource("s1")]
+
+[node name="Load2" parent="Stages" instance=ExtResource("s2")]
+
+[node name="Load3" parent="Stages" instance=ExtResource("s3")]
+
+[node name="Load4" parent="Stages" instance=ExtResource("s4")]
+
+[node name="Load5" parent="Stages" instance=ExtResource("s5")]
+
+[node name="Load6" parent="Stages" instance=ExtResource("s6")]
+
+[node name="Load7" parent="Stages" instance=ExtResource("s7")]
+
+[node name="Load8" parent="Stages" instance=ExtResource("s8")]

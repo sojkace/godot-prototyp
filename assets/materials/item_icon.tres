@@ -1,0 +1,6 @@
+[gd_resource type="StandardMaterial3D" format=3]
+
+[resource]
+resource_name = "ItemIcon"
+roughness = 1.0
+texture_filter = 0

@@ -1,0 +1,14 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/buildings/mine.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/models/buildings/mine_gold.glb" id="2_model"]
+[ext_resource type="PackedScene" path="res://assets/models/buildings/mine_gold_gold_animated.glb" id="3_pop"]
+
+[node name="MineGold" type="Node3D"]
+script = ExtResource("1_script")
+area_shape = 0
+
+[node name="Model" parent="." instance=ExtResource("2_model")]
+
+[node name="PopPart" parent="." instance=ExtResource("3_pop")]
+position = Vector3(0, -0.9, 0)

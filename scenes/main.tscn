@@ -1,0 +1,64 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scenes/world/island.gd" id="2_island"]
+[ext_resource type="Script" path="res://scenes/train/train_controller.gd" id="3_trains"]
+[ext_resource type="Script" path="res://scenes/world/camera_rig.gd" id="4_camera"]
+[ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="5_hud"]
+[ext_resource type="Script" path="res://scenes/world/build_controller.gd" id="6_build"]
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 1
+background_color = Color(0.56, 0.8, 0.95, 1)
+ambient_light_source = 2
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.55
+
+[sub_resource type="StandardMaterial3D" id="Material_sea"]
+albedo_color = Color(0.18, 0.5, 0.78, 1)
+roughness = 0.6
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_sea"]
+material = SubResource("Material_sea")
+size = Vector2(200, 200)
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_main")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-55, 35, 0)
+light_energy = 1.1
+shadow_enabled = true
+
+[node name="Sea" type="MeshInstance3D" parent="."]
+position = Vector3(0, -1.2, 0)
+mesh = SubResource("PlaneMesh_sea")
+
+[node name="Island" type="Node3D" parent="."]
+script = ExtResource("2_island")
+
+[node name="TrainController" type="Node" parent="." node_paths=PackedStringArray("island")]
+script = ExtResource("3_trains")
+island = NodePath("../Island")
+
+[node name="BuildController" type="Node3D" parent="." node_paths=PackedStringArray("island", "camera")]
+script = ExtResource("6_build")
+island = NodePath("../Island")
+camera = NodePath("../CameraRig/Pitch/Camera3D")
+
+[node name="CameraRig" type="Node3D" parent="."]
+position = Vector3(2.5, 0, 3)
+rotation_degrees = Vector3(0, 30, 0)
+script = ExtResource("4_camera")
+
+[node name="Pitch" type="Node3D" parent="CameraRig"]
+rotation_degrees = Vector3(-55, 0, 0)
+
+[node name="Camera3D" type="Camera3D" parent="CameraRig/Pitch"]
+position = Vector3(0, 0, 16)
+fov = 50.0
+
+[node name="Hud" parent="." instance=ExtResource("5_hud")]

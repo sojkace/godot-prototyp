@@ -1,0 +1,10 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/buildings/rail.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/models/buildings/rail_curve.glb" id="2_model"]
+
+[node name="RailCurve" type="Node3D"]
+script = ExtResource("1_script")
+kind = 1
+
+[node name="Model" parent="." instance=ExtResource("2_model")]
