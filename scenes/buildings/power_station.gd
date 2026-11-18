@@ -1,6 +1,7 @@
 class_name PowerStation
 extends Building
-## End of the line: a full train pays coins (1 per 4 loads), any other train costs one heart.
+## End of the line: a full train pays coins (capacity / loads_per_coin),
+## any other train costs hearts (see GameRules).
 
 @onready var _coin: Node3D = $Coin
 @onready var _heart: Node3D = $HeartBroken
@@ -12,12 +13,15 @@ func _ready() -> void:
 
 
 func receive(train: Train) -> void:
-	if train.is_full():
-		GameState.coins += maxi(1, train.capacity / 4)
+	var rules := GameState.rules
+	var full := train.is_full()
+	if full:
+		GameState.coins += maxi(1, train.capacity / maxi(1, rules.loads_per_coin))
 		_pop(_coin)
 	else:
-		GameState.hearts -= 1
+		GameState.hearts -= rules.hearts_per_missed_train
 		_pop(_heart)
+	Events.train_arrived.emit(train, full)
 
 
 func _pop(part: Node3D) -> void:

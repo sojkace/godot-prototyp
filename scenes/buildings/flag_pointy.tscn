@@ -5,6 +5,6 @@
 
 [node name="FlagPointy" type="Node3D"]
 script = ExtResource("1_script")
-area_shape = 1
+area_shape = "long_cross"
 
 [node name="Model" parent="." instance=ExtResource("2_model")]

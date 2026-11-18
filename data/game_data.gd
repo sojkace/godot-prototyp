@@ -1,13 +1,14 @@
 class_name GameData
-## Balance data for the prototype. Change numbers here to tune the game.
+## Static catalog: item and building names, icons, scenes and range overlays.
+## Balance numbers are NOT here - they live in GameRules (`res://data/rules/*.tres`).
+##
+## Adding a new building type:
+##   1. scene `res://scenes/buildings/<id>.tscn` (Model child + script extending Building)
+##   2. name in BUILDING_NAMES, icon `res://assets/ui/icons/<id>.png` (tools/blender/render_icons.py)
+##   3. put the id into a deck in GameRules.decks
 
 const ITEMS: Array[String] = ["wood", "stone", "metal", "glass"]
 const ITEM_NAMES := {"wood": "Holz", "stone": "Stein", "metal": "Metall", "glass": "Glas"}
-## Item cards in the shuffled item deck (reshuffled when empty).
-const ITEM_DECK := {"wood": 25, "stone": 25, "metal": 20, "glass": 20}
-const START_ITEMS := {"wood": 2, "stone": 2, "metal": 2, "glass": 1}
-## Items every workshop (item crafter) delivers after each round.
-const ITEMS_PER_CRAFTER := 2
 
 const BUILDING_NAMES := {
 	"rail_straight": "Schiene",
@@ -19,54 +20,33 @@ const BUILDING_NAMES := {
 	"flag_pointy": "Langflagge",
 	"observer": "Beobachter",
 	"marketplace": "Marktplatz",
+	"power_station": "Kraftwerk",
 }
 
-## Card decks. The top card of each deck can be played; it costs one of each item in "cost".
-const DECKS := {
-	"rails": {
-		"name": "Schienen",
-		"cost": ["wood", "metal"],
-		"cards": {"rail_straight": 7, "rail_curve": 5},
-	},
-	"buildings": {
-		"name": "Gebäude",
-		"cost": ["stone", "glass"],
-		"cards": {"mine_gold": 5, "mine_silver": 4, "itemcrafter": 3, "observer": 2, "marketplace": 1},
-	},
-	"land": {
-		"name": "Land",
-		"cost": ["wood", "stone"],
-		"cards": {"flag_normal": 5, "flag_pointy": 3},
-	},
+## Range overlay model per area shape (see GridUtil.area_offsets), shown while placing.
+const AREA_OVERLAYS := {
+	"square": "res://assets/models/grids/grid_mine_gold.glb",
+	"cross": "res://assets/models/grids/grid_mine_silver.glb",
+	"diamond": "res://assets/models/grids/grid_flag_normal.glb",
+	"long_cross": "res://assets/models/grids/grid_flag_pointy.glb",
 }
-const DECK_ORDER: Array[String] = ["rails", "buildings", "land"]
-
-
-## Levels. Every round is a string of trains in spawn order:
-## "s" = small train (4 loads, train_1_*), "b" = big train (8 loads, train_2_*).
-## Level 1 follows the Unity "Level1" settings (5 rounds each with 1, 2, 3, 4 trains).
-const LEVELS: Array[Dictionary] = [
-	{
-		"name": "Level 1",
-		"description": "20 Runden, kleine Züge",
-		"rounds": [
-			"s", "s", "s", "s", "s",
-			"ss", "ss", "ss", "ss", "ss",
-			"sss", "sss", "sss", "sss", "sss",
-			"ssss", "ssss", "ssss", "ssss", "ssss",
-		],
-	},
-	{
-		"name": "Level 2",
-		"description": "15 Runden, schwere Züge mit 8 Plätzen",
-		"rounds": [
-			"s", "s", "b", "s", "b",
-			"sb", "bs", "bb", "sb", "bb",
-			"sbb", "bbs", "bbb", "bbb", "bbbb",
-		],
-	},
-]
 
 
 static func icon(id: String) -> Texture2D:
 	return load("res://assets/ui/icons/%s.png" % id)
+
+
+static func building_scene(id: String) -> PackedScene:
+	return load("res://scenes/buildings/%s.tscn" % id)
+
+
+static func building_name(id: String) -> String:
+	return BUILDING_NAMES.get(id, id)
+
+
+static func item_name(id: String) -> String:
+	return ITEM_NAMES.get(id, id)
+
+
+static func area_overlay(shape: String) -> PackedScene:
+	return load(AREA_OVERLAYS[shape]) if AREA_OVERLAYS.has(shape) else null

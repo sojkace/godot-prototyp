@@ -5,6 +5,6 @@
 
 [node name="FlagNormal" type="Node3D"]
 script = ExtResource("1_script")
-area_shape = 0
+area_shape = "diamond"
 
 [node name="Model" parent="." instance=ExtResource("2_model")]

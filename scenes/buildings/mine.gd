@@ -1,11 +1,8 @@
 class_name Mine
 extends Building
-## Each train step, a mine loads one item into one train standing in its area.
+## After every train step the mine loads items into a non-full train standing in its area.
+## Which train: a building that watches the mine (observer) may choose, otherwise random.
 
-enum AreaShape { SQUARE, CROSS }
-
-## SQUARE = all 8 neighbours (gold mine), CROSS = the 4 direct neighbours (silver mine).
-@export var area_shape := AreaShape.SQUARE
 ## How far the optional "PopPart" child moves up when the mine gives an item.
 @export var pop_height := 0.9
 
@@ -19,12 +16,27 @@ func _ready() -> void:
 		_pop_rest_y = _pop_part.position.y
 
 
-func area_offsets() -> Array[Vector2i]:
-	return GridUtil.area_offsets("square" if area_shape == AreaShape.SQUARE else "cross")
+func on_train_step(trains: Array[Train]) -> void:
+	var gave := false
+	for i in GameState.rules.loads_per_mine_step:
+		var candidates: Array[Train] = []
+		for train in trains:
+			if not train.is_full() and covers(train.cell()):
+				candidates.append(train)
+		if candidates.is_empty():
+			break
+		_pick_train(candidates).add_load()
+		gave = true
+	if gave:
+		play_give()
 
 
-func covers(target_cell: Vector2i) -> bool:
-	return area_offsets().has(target_cell - cell)
+func _pick_train(candidates: Array[Train]) -> Train:
+	for building: Building in island.buildings.values():
+		var chosen := building.choose_train(self, candidates)
+		if chosen:
+			return chosen
+	return candidates.pick_random()
 
 
 func play_give() -> void:

@@ -6,5 +6,6 @@
 [node name="RailCurve" type="Node3D"]
 script = ExtResource("1_script")
 kind = 1
+rotatable = true
 
 [node name="Model" parent="." instance=ExtResource("2_model")]

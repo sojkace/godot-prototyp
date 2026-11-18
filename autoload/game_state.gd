@@ -1,5 +1,7 @@
 extends Node
-## Global state of the current run: coins, hearts, round, items and card decks.
+## Global state of the current run: active rules, coins, hearts, round, items and card decks.
+## Every number comes from `rules` (a GameRules resource), so rule variants can be swapped
+## without touching code.
 
 signal coins_changed(value: int)
 signal hearts_changed(value: int)
@@ -8,9 +10,14 @@ signal items_changed
 signal decks_changed
 signal game_over(won: bool)
 
-const START_HEARTS := 3
+const RULES_DIR := "res://data/rules/"
+const DEFAULT_RULES := "default"
 
-## Index into GameData.LEVELS; set by the main menu before the game scene starts.
+## Active rule variant (file name without extension, see RULES_DIR).
+var rules_id := DEFAULT_RULES
+var rules: GameRules
+
+## Index into rules.levels; set by the main menu before the game scene starts.
 var level_index := 0
 
 var coins := 0:
@@ -18,7 +25,7 @@ var coins := 0:
 		coins = value
 		coins_changed.emit(coins)
 
-var hearts := START_HEARTS:
+var hearts := 0:
 	set(value):
 		hearts = maxi(value, 0)
 		hearts_changed.emit(hearts)
@@ -39,24 +46,56 @@ var _item_pile: Array[String] = []
 
 
 func _ready() -> void:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--rules="):
+			rules_id = arg.trim_prefix("--rules=")
+	load_rules(rules_id)
+
+
+# --- Rules ---
+
+## File names (without extension) of all rule variants in RULES_DIR.
+static func available_rules() -> Array[String]:
+	var result: Array[String] = []
+	for file in DirAccess.get_files_at(RULES_DIR):
+		# Exported builds list "x.tres.remap" instead of "x.tres".
+		file = file.trim_suffix(".remap")
+		if file.ends_with(".tres"):
+			result.append(file.get_basename())
+	result.sort()
+	return result
+
+
+func load_rules(id: String) -> void:
+	var path := RULES_DIR + id + ".tres"
+	if not ResourceLoader.exists(path):
+		push_warning("Rules '%s' not found, using '%s'" % [id, DEFAULT_RULES])
+		id = DEFAULT_RULES
+		path = RULES_DIR + id + ".tres"
+	rules_id = id
+	rules = load(path) as GameRules
 	reset()
 
 
 func reset() -> void:
-	coins = 0
-	hearts = START_HEARTS
+	coins = rules.start_coins
+	hearts = rules.start_hearts
 	round_index = 0
-	items = GameData.START_ITEMS.duplicate()
-	_item_pile = _shuffled(GameData.ITEM_DECK)
-	for deck_id in GameData.DECK_ORDER:
-		_draw_piles[deck_id] = _shuffled(GameData.DECKS[deck_id]["cards"])
+	items = rules.start_items.duplicate()
+	_item_pile = _shuffled(rules.item_deck)
+	_draw_piles.clear()
+	_discard_piles.clear()
+	for deck_id in rules.deck_order:
+		_draw_piles[deck_id] = _shuffled(rules.decks[deck_id]["cards"])
 		_discard_piles[deck_id] = []
 	items_changed.emit()
 	decks_changed.emit()
 
 
+# --- Level & rounds ---
+
 func level() -> Dictionary:
-	return GameData.LEVELS[clampi(level_index, 0, GameData.LEVELS.size() - 1)]
+	return rules.levels[clampi(level_index, 0, rules.levels.size() - 1)]
 
 
 func rounds() -> Array:
@@ -90,12 +129,16 @@ func item_count(item: String) -> int:
 	return items.get(item, 0)
 
 
+func add_items(list: Array[String]) -> void:
+	for item in list:
+		items[item] = item_count(item) + 1
+	items_changed.emit()
+
+
 ## Draws `count` item cards from the item deck into the inventory. Returns what was drawn.
 func deliver_items(count: int) -> Array[String]:
 	var drawn := draw_item_cards(count)
-	for item in drawn:
-		items[item] = item_count(item) + 1
-	items_changed.emit()
+	add_items(drawn)
 	return drawn
 
 
@@ -104,7 +147,7 @@ func draw_item_cards(count: int) -> Array[String]:
 	var drawn: Array[String] = []
 	for i in count:
 		if _item_pile.is_empty():
-			_item_pile = _shuffled(GameData.ITEM_DECK)
+			_item_pile = _shuffled(rules.item_deck)
 		drawn.append(_item_pile.pop_back())
 	return drawn
 
@@ -124,8 +167,16 @@ func trade_item(give: String, get_item: String) -> void:
 
 # --- Card decks ---
 
+func deck_ids() -> Array[String]:
+	return rules.deck_order
+
+
+func deck_name(deck_id: String) -> String:
+	return rules.decks[deck_id].get("name", deck_id)
+
+
 func deck_cost(deck_id: String) -> Array:
-	return GameData.DECKS[deck_id]["cost"]
+	return rules.decks[deck_id]["cost"]
 
 
 func top_card(deck_id: String) -> String:
@@ -154,19 +205,15 @@ func play_card(deck_id: String) -> void:
 	decks_changed.emit()
 
 
-## Coins needed to throw away the top card of a deck (e.g. a rail that does not fit).
-const DISCARD_COST := 1
-
-
 func can_discard(deck_id: String) -> bool:
-	return coins >= DISCARD_COST and top_card(deck_id) != ""
+	return coins >= rules.discard_cost and top_card(deck_id) != ""
 
 
 ## Moves the top card to the discard pile without building it. Costs coins.
 func discard_top(deck_id: String) -> void:
 	if not can_discard(deck_id):
 		return
-	coins -= DISCARD_COST
+	coins -= rules.discard_cost
 	_move_top_to_discard(deck_id)
 	decks_changed.emit()
 

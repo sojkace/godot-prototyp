@@ -7,12 +7,18 @@ extends Node3D
 var load_count := 0
 ## Index into Island.rail_path (0 = power station).
 var path_index := 0
+var _cell := Vector2i.ZERO
 
 @onready var _stages: Array[Node] = $Stages.get_children()
 
 
 func _ready() -> void:
 	_update_model()
+
+
+## Grid cell the train stands on (logically, even while its tween still runs).
+func cell() -> Vector2i:
+	return _cell
 
 
 func is_full() -> bool:
@@ -29,9 +35,15 @@ func add_load() -> void:
 	tween.tween_property(self, "scale", Vector3.ONE, 0.15)
 
 
-func move_to(target: Vector3, duration: float) -> void:
+func place_at(target: Vector2i) -> void:
+	_cell = target
+	position = GridUtil.cell_to_world(target)
+
+
+func move_to(target: Vector2i, duration: float) -> void:
+	_cell = target
 	var tween := create_tween()
-	tween.tween_property(self, "position", target, duration) \
+	tween.tween_property(self, "position", GridUtil.cell_to_world(target), duration) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 

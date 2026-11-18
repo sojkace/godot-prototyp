@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="GameRules" format=3]
+
+[ext_resource type="Script" path="res://data/game_rules.gd" id="1_rules"]
+
+[resource]
+script = ExtResource("1_rules")
+title = "Leicht"
+description = "Beispiel-Variante: 5 Herzen, mehr Start-Items, Werkstatt liefert 3."
+start_hearts = 5
+start_items = Dictionary[String, int]({
+"glass": 3,
+"metal": 3,
+"stone": 4,
+"wood": 4
+})
+items_per_crafter = 3
