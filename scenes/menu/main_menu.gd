@@ -4,7 +4,7 @@ extends Control
 ## skip the menu; `--rules=<variant>` is read by GameState.
 
 const GAME_SCENE := "res://scenes/main.tscn"
-const SKIP_MENU_ARGS: Array[String] = ["--autoplay", "--demo-build", "--demo-market"]
+const SKIP_MENU_ARGS: Array[String] = ["--autoplay", "--demo-build", "--demo-market", "--demo-collect"]
 
 @onready var _level_buttons: VBoxContainer = %LevelButtons
 @onready var _quit_button: Button = %QuitButton
@@ -25,7 +25,7 @@ func _ready() -> void:
 		if arg.begins_with("--level="):
 			GameState.level_index = int(arg.trim_prefix("--level=")) - 1
 			skip_menu = true
-		elif SKIP_MENU_ARGS.has(arg) or arg.begins_with("--simulate="):
+		elif SKIP_MENU_ARGS.has(arg) or arg.begins_with("--simulate=") or arg.begins_with("--demo-card="):
 			skip_menu = true
 	if skip_menu:
 		start_level.call_deferred(GameState.level_index)

@@ -5,7 +5,7 @@ class_name GameData
 ## Adding a new building type:
 ##   1. scene `res://scenes/buildings/<id>.tscn` (Model child + script extending Building)
 ##   2. name in BUILDING_NAMES, icon `res://assets/ui/icons/<id>.png` (tools/blender/render_icons.py)
-##   3. put the id into a deck in GameRules.decks
+##   3. add a card using it to GameRules.cards and put the card into a deck
 
 const ITEMS: Array[String] = ["wood", "stone", "metal", "glass"]
 const ITEM_NAMES := {"wood": "Holz", "stone": "Stein", "metal": "Metall", "glass": "Glas"}
@@ -21,6 +21,9 @@ const BUILDING_NAMES := {
 	"observer": "Beobachter",
 	"marketplace": "Marktplatz",
 	"power_station": "Kraftwerk",
+	"water": "Wasser",
+	"bridge": "Brücke",
+	"dirt": "Erde",
 }
 
 ## Range overlay model per area shape (see GridUtil.area_offsets), shown while placing.
@@ -32,8 +35,10 @@ const AREA_OVERLAYS := {
 }
 
 
+## Icon for an item / building / card icon id, or null if none was rendered.
 static func icon(id: String) -> Texture2D:
-	return load("res://assets/ui/icons/%s.png" % id)
+	var path := "res://assets/ui/icons/%s.png" % id
+	return load(path) if ResourceLoader.exists(path) else null
 
 
 static func building_scene(id: String) -> PackedScene:

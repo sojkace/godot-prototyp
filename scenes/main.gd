@@ -1,10 +1,11 @@
 class_name Main
 extends Node3D
-## Game loop: play a card -> place the building -> start trains -> round ends ->
-## buildings react (on_round_end) -> next round.
+## Game loop: play a card -> place its piece -> start trains -> round ends ->
+## buildings react (on_round_end) -> collect items -> next round.
 ## The public functions below are the player's actions; the HUD and the AutoplayBot both
 ## use them, so a rule change only has to be made here once.
-## Screenshot helpers: `-- --demo-build` (placement mode), `-- --demo-market` (trade window).
+## Screenshot helpers: `-- --demo-build` (placement mode), `-- --demo-market` (trade window),
+## `-- --demo-collect` (workshops show items to collect), `-- --demo-card=<card id>` (preview a card).
 
 ## The player may act (start of the game and after every round).
 signal turn_ready
@@ -16,6 +17,8 @@ signal turn_ready
 
 ## Deck whose card is currently being placed ("" = none).
 var _pending_deck := ""
+## Shop tool currently being placed ("" = none), paid with coins on confirm.
+var _pending_tool := ""
 
 
 func _ready() -> void:
@@ -25,12 +28,14 @@ func _ready() -> void:
 	hud.restart_pressed.connect(restart)
 	hud.menu_pressed.connect(back_to_menu)
 	hud.card_pressed.connect(start_placing)
+	hud.tool_pressed.connect(start_tool)
 	hud.discard_pressed.connect(discard)
 	hud.rotate_pressed.connect(build.rotate_preview)
 	hud.confirm_pressed.connect(confirm_placing)
 	hud.cancel_pressed.connect(cancel_placing)
 	build.placement_changed.connect(hud.set_placement)
-	build.cell_tapped.connect(_on_cell_tapped)
+	build.cell_tapped.connect(tap_cell)
+	Events.market_requested.connect(hud.open_market)
 	trains.round_finished.connect(_on_round_finished)
 	hud.set_running(false)
 
@@ -38,9 +43,14 @@ func _ready() -> void:
 	if bot:
 		add_child(bot)
 	elif OS.get_cmdline_user_args().has("--demo-market"):
-		_on_cell_tapped.call_deferred(Vector2i(2, -1))
+		tap_cell.call_deferred(Vector2i(2, -1))
 	elif OS.get_cmdline_user_args().has("--demo-build"):
 		start_placing.call_deferred("buildings")
+	elif OS.get_cmdline_user_args().has("--demo-collect"):
+		island.notify_round_end.call_deferred()
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--demo-card="):
+			build.start.call_deferred(arg.trim_prefix("--demo-card="))
 	turn_ready.emit.call_deferred()
 
 
@@ -54,25 +64,74 @@ func is_round_running() -> bool:
 func start_placing(deck_id: String) -> void:
 	if trains.running or not GameState.can_afford(deck_id):
 		return
+	cancel_placing()
 	_pending_deck = deck_id
 	build.start(GameState.top_card(deck_id))
 
 
-## Builds the previewed card at the chosen cell and pays for it. False if not possible.
+## Shows the preview for a shop tool (bomb, bridge); coins are paid on confirm.
+func start_tool(card_id: String) -> void:
+	if trains.running or not can_buy(card_id):
+		return
+	cancel_placing()
+	_pending_tool = card_id
+	build.start(card_id)
+
+
+func tool_cost(card_id: String) -> int:
+	return int(CardShape.definition(card_id).get("coins", 0))
+
+
+func can_buy(card_id: String) -> bool:
+	return GameState.coins >= tool_cost(card_id)
+
+
+## Builds the previewed card / uses the tool where it is shown and pays for it.
+## False if not possible.
 func confirm_placing() -> bool:
+	var layout := build.valid_layout()
+	if layout.is_empty():
+		return false
 	var deck_id := _pending_deck
-	if deck_id == "" or not GameState.can_afford(deck_id):
+	var tool_id := _pending_tool
+	cancel_placing()
+	if tool_id != "":
+		return _use_tool(tool_id, layout)
+	return deck_id != "" and _build(deck_id, layout)
+
+
+## Uses a shop tool directly (no preview), e.g. for the bot.
+func use_tool(card_id: String, c: Vector2i) -> bool:
+	if trains.running or build.active:
 		return false
-	if not build.confirm():
+	var layout := CardShape.layout(CardShape.definition(card_id), island, c, 0)
+	if not PlacementRules.is_valid(island, layout, false):
 		return false
-	_pending_deck = ""
-	GameState.play_card(deck_id)
-	return true
+	return _use_tool(card_id, layout)
+
+
+## Builds the top card of a deck directly (no preview), e.g. for the bot. See PlacementRules.options.
+func place_card(deck_id: String, anchor: Vector2i, steps: int) -> bool:
+	if trains.running or build.active:
+		return false
+	var def := CardShape.definition(GameState.top_card(deck_id))
+	var layout := CardShape.layout(def, island, anchor, steps)
+	if not PlacementRules.is_valid(island, layout, CardShape.is_rail(def)):
+		return false
+	return _build(deck_id, layout)
+
+
+## Taps a building on the island (collect items, open a marketplace ...).
+func tap_cell(c: Vector2i) -> void:
+	var building := island.buildings.get(c) as Building
+	if building and not trains.running:
+		building.on_tapped()
 
 
 func cancel_placing() -> void:
 	build.cancel()
 	_pending_deck = ""
+	_pending_tool = ""
 
 
 func discard(deck_id: String) -> void:
@@ -100,11 +159,20 @@ func back_to_menu() -> void:
 
 # --- Flow ---
 
-## Tapping a marketplace opens its trade window.
-func _on_cell_tapped(c: Vector2i) -> void:
-	var market := island.buildings.get(c) as Marketplace
-	if market:
-		hud.open_market(market)
+func _use_tool(card_id: String, layout: Array[Dictionary]) -> bool:
+	if not can_buy(card_id):
+		return false
+	GameState.coins -= tool_cost(card_id)
+	island.place_layout(layout)
+	return true
+
+
+func _build(deck_id: String, layout: Array[Dictionary]) -> bool:
+	if not GameState.can_afford(deck_id):
+		return false
+	island.place_layout(layout)
+	GameState.play_card(deck_id)
+	return true
 
 
 func _on_round_finished() -> void:

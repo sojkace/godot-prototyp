@@ -1,6 +1,7 @@
 class_name CardBar
 extends HBoxContainer
-## One big button per deck showing its top card, name and cost, plus a discard button.
+## One big button per deck showing its top card (icon, shape sketch, name, cost),
+## plus a discard button.
 ## Decks come from the active GameRules, so new decks show up automatically.
 
 signal card_pressed(deck_id: String)
@@ -15,7 +16,7 @@ var locked := false:
 		locked = value
 		_refresh()
 
-var _cards := {}  # deck id -> {button, discard, icon, name, count}
+var _cards := {}  # deck id -> {button, discard, icon, shape, name, count}
 
 
 func _ready() -> void:
@@ -44,26 +45,34 @@ func _add_deck(deck_id: String) -> void:
 	button.add_child(column)
 
 	var count_label := UiKit.label(18)
-	var card_icon := UiKit.icon(null, Vector2(0, 110))
-	var name_label := UiKit.label(26)
+	var visuals := HBoxContainer.new()
+	visuals.alignment = BoxContainer.ALIGNMENT_CENTER
+	visuals.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var card_icon := UiKit.icon(null, Vector2(80, 90))
+	var shape := ShapePreview.new()
+	shape.custom_minimum_size = Vector2(70, 90)
+	visuals.add_child(card_icon)
+	visuals.add_child(shape)
+	var name_label := UiKit.label(20)
+	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var cost_row := HBoxContainer.new()
 	cost_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	cost_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for item in GameState.deck_cost(deck_id):
 		cost_row.add_child(UiKit.icon(GameData.icon(item), COST_ICON_SIZE))
 	column.add_child(count_label)
-	column.add_child(card_icon)
+	column.add_child(visuals)
 	column.add_child(name_label)
 	column.add_child(cost_row)
 
-	var discard := UiKit.button("Ablegen (%d Münze)" % GameState.rules.discard_cost,
+	var discard := UiKit.button("Überspringen (%d Münze)" % GameState.rules.discard_cost,
 		discard_pressed.emit.bind(deck_id), 18, 0.0)
 
 	deck_column.add_child(button)
 	deck_column.add_child(discard)
 	add_child(deck_column)
 	_cards[deck_id] = {
-		"button": button, "discard": discard, "icon": card_icon, "name": name_label, "count": count_label,
+		"button": button, "discard": discard, "icon": card_icon, "shape": shape, "name": name_label, "count": count_label,
 	}
 
 
@@ -71,8 +80,9 @@ func _refresh() -> void:
 	for deck_id in _cards:
 		var card: Dictionary = _cards[deck_id]
 		var top := GameState.top_card(deck_id)
-		(card["icon"] as TextureRect).texture = GameData.icon(top) if top != "" else null
-		(card["name"] as Label).text = GameData.building_name(top) if top != "" else "–"
+		(card["icon"] as TextureRect).texture = GameData.icon(CardShape.icon_id(top)) if top != "" else null
+		(card["shape"] as ShapePreview).card_id = top
+		(card["name"] as Label).text = CardShape.card_name(top) if top != "" else "–"
 		(card["count"] as Label).text = "%s (%d)" % [GameState.deck_name(deck_id), GameState.cards_left(deck_id)]
 		(card["button"] as Button).disabled = locked or not GameState.can_afford(deck_id)
 		(card["discard"] as Button).disabled = locked or not GameState.can_discard(deck_id)
