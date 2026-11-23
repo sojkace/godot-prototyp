@@ -1,0 +1,41 @@
+# Runs on every pull request and on main: imports the project headless, then lets the
+# autoplay bot play one game. Fails on script/parse errors or if the game never ends.
+name: Godot check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GODOT_VERSION: 4.7.2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: ~/godot
+          key: godot-${{ env.GODOT_VERSION }}
+
+      - name: Download Godot
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot
+          curl -sSL -o godot.zip "https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip -d ~/godot
+          mv ~/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/godot/godot
+
+      - name: Import project
+        run: ~/godot/godot --headless --path . --import 2>&1 | tee import.log
+
+      - name: Autoplay one game
+        run: timeout 300 ~/godot/godot --headless --path . -- --autoplay --seed=1 2>&1 | tee autoplay.log
+
+      - name: Check logs
+        run: bash .github/scripts/check_logs.sh import.log autoplay.log

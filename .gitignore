@@ -10,3 +10,6 @@ Thumbs.db
 # Blender backups
 *.blend1
 *.blend2
+
+# Third-party tutorial code with unclear license (kept locally only)
+unity_code/ResourceExpress/Assets/Scripts/CameraMovement.cs
