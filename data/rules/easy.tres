@@ -5,13 +5,12 @@
 [resource]
 script = ExtResource("1_rules")
 title = "Leicht"
-description = "5 Herzen, mehr Start-Items, Werkstatt liefert 3, Minen geben 5 pro Runde."
-start_hearts = 5
+description = "4 Aktionen, mehr Start-Items, Aufträge mit 7 Runden Frist."
+actions_per_round = 4
+order_deadline = 7
 start_items = Dictionary[String, int]({
 "glass": 3,
 "metal": 3,
-"stone": 4,
-"wood": 4
+"stone": 5,
+"wood": 6
 })
-items_per_crafter = 3
-mine_loads_per_round = 5

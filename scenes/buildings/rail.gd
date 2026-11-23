@@ -29,6 +29,3 @@ func openings() -> Array[int]:
 func connect_dirs(dir_a: int, dir_b: int) -> void:
 	set_rotation_steps(GridUtil.steps_for(base_openings(), [dir_a, dir_b]))
 
-
-func on_placed() -> void:
-	island.rail_path.append(cell)

@@ -1,8 +1,8 @@
 class_name BuildController
 extends Node3D
 ## Placement mode for one card: shows a ghost of every cell of the card's piece
-## (CardShape), tap a cell to move it (rails stay at the open end), "Drehen" turns it
-## (rails: the whole block, see CardShape.rail_variants), then Main confirms or cancels.
+## (CardShape), tap a cell to move it, "Drehen" turns it (rails: the whole block, see
+## CardShape.rail_variants), then Main confirms or cancels.
 ## Shop tools (bomb, bridge) use the same preview on a single cell. Green/red markers show if the spot is
 ## valid (PlacementRules). Placing and paying is done by Main, not here.
 ## Also reports taps on the island while not placing (cell_tapped).
@@ -45,7 +45,7 @@ func start(card_id: String) -> void:
 	_card_def = CardShape.definition(card_id)
 	_rail = CardShape.is_rail(_card_def)
 	_steps = 0
-	_anchor = island.open_end_cell()
+	_anchor = _cell_at_screen_center()
 	_layout = CardShape.layout(_card_def, island, _anchor, _steps)
 	var marker_mesh := BoxMesh.new()
 	marker_mesh.size = Vector3(1.0, 0.04, 1.0)
@@ -69,7 +69,7 @@ func valid_layout() -> Array[Dictionary]:
 	return _layout.duplicate() if active and _valid else ([] as Array[Dictionary])
 
 
-## Next rotation (rails: mirror). Prefers the next one that fits.
+## Next rotation. Prefers the next one that fits.
 func rotate_preview() -> void:
 	if not active or not CardShape.can_turn(_card_def):
 		return
@@ -124,29 +124,38 @@ func _handle_press(pressed: bool, screen_pos: Vector2) -> void:
 		var c := Vector2i(roundi(point.x), roundi(point.z))
 		if not active:
 			cell_tapped.emit(c)
-		elif not _rail:
+		else:
 			_anchor = c
+			# Keep the rotation if it fits here, otherwise take the first one that does.
+			if not _is_valid_at(c, _steps):
+				for steps in CardShape.step_count(_card_def):
+					if _is_valid_at(c, steps):
+						_steps = steps
+						break
 			_update()
 
 
 ## Starts on the valid spot closest to the screen center (any rotation), if there is one.
+## Rails prefer spots that continue an existing line.
 func _start_at_best_spot(card_id: String) -> void:
-	if not _rail:
-		var center := _cell_at_screen_center()
-		_anchor = center
-		var best_distance := INF
-		for option in PlacementRules.options(island, card_id):
-			var distance := Vector2(option["anchor"] - center).length()
-			if distance < best_distance:
-				best_distance = distance
-				_anchor = option["anchor"]
-				_steps = option["steps"]
-	else:
-		for steps in CardShape.step_count(_card_def):
-			if _is_valid_at(_anchor, steps):
-				_steps = steps
-				break
+	var center := _cell_at_screen_center()
+	_anchor = center
+	var best_distance := INF
+	for option in PlacementRules.options(island, card_id):
+		var distance := Vector2(option["anchor"] - center).length()
+		if _rail and _continues_line(option["layout"]):
+			distance -= 4.0
+		if distance < best_distance:
+			best_distance = distance
+			_anchor = option["anchor"]
+			_steps = option["steps"]
 	_update()
+
+
+func _continues_line(layout: Array[Dictionary]) -> bool:
+	var first: Dictionary = layout[0]
+	var back: Vector2i = first["cell"] + GridUtil.DIR_VECTORS[first["in"]]
+	return island.buildings.get(back) is Rail
 
 
 func _is_valid_at(anchor: Vector2i, steps: int) -> bool:
@@ -195,7 +204,7 @@ func _show_hidden() -> void:
 func _cell_at_screen_center() -> Vector2i:
 	var hit: Variant = _ground_point(get_viewport().get_visible_rect().size / 2.0)
 	if hit == null:
-		return island.rail_path[0]
+		return Island.STATION_CELL
 	var point: Vector3 = hit
 	return Vector2i(roundi(point.x), roundi(point.z))
 

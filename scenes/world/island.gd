@@ -1,48 +1,46 @@
 class_name Island
 extends Node3D
 ## The board: generates a random island (like the Unity IslandBuilder), places the start
-## setup and tracks what stands on which cell. Game rules for single building types live
-## in the building scripts (see Building hooks), not here.
-## Command line: `-- --seed=123` makes the island reproducible.
+## setup, tracks what stands on which cell and lets new factories appear as the island
+## grows. Game rules for single building types live in the building scripts (see Building
+## hooks), not here. Command line: `-- --seed=123` makes the island reproducible.
 
 const DIRT_ID := "dirt"
 
 ## Outline generation: walk around ISLAND_CENTER in random angle steps, putting a vertex
 ## at a random distance each time (radius / angle limits come from GameRules).
-const ISLAND_CENTER := Vector2(1.5, 0.5)
+const ISLAND_CENTER := Vector2(0.5, 0.5)
 
-const POWER_STATION_CELL := Vector2i(0, 0)
-## Rails from the power station to the open end.
-const RAIL_CELLS: Array[Vector2i] = [
-	Vector2i(1, 0), Vector2i(2, 0), Vector2i(3, 0), Vector2i(3, 1), Vector2i(3, 2),
-]
+const STATION_CELL := Vector2i(0, 0)
 ## Other start buildings: cell -> building id
 const START_BUILDINGS := {
-	Vector2i(2, 1): "mine_gold",
-	Vector2i(4, 1): "mine_silver",
-	Vector2i(1, -1): "itemcrafter",
-	Vector2i(2, -1): "marketplace",
+	Vector2i(1, 1): "mine_gold",
+	Vector2i(-1, 0): "itemcrafter",
+	Vector2i(0, -1): "marketplace",
 }
 
 ## Grid cell -> Building
 var buildings := {}
 ## Grid cell -> true for every land cell
 var land := {}
-## Power station first, then the rails up to the open end.
-var rail_path: Array[Vector2i] = []
-var power_station: PowerStation
 var island_seed := 0
+var factories: Array[Factory] = []
+var _start_land := 0
+var _rng := RandomNumberGenerator.new()
 
 
-func _ready() -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.randomize()
+## Builds a new island. Called by Main after GameState.reset().
+func setup() -> void:
+	_rng.randomize()
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seed="):
-			rng.seed = int(arg.trim_prefix("--seed="))
-	island_seed = rng.seed
-	_generate_land(rng)
+			_rng.seed = int(arg.trim_prefix("--seed="))
+	island_seed = _rng.seed
+	_generate_land()
 	_build_start_island()
+	_start_land = land.size()
+	GameState.set_stat("land", land.size())
+	spawn_factory()
 
 
 # --- Queries ---
@@ -69,19 +67,20 @@ func count_type(id: String) -> int:
 	return count
 
 
-## Direction in which the rail line continues after its last rail.
-func open_end_dir() -> int:
-	var last := rail_path[-1]
-	var to_prev := GridUtil.dir_between(last, rail_path[-2])
-	for d in (buildings[last] as Rail).openings():
-		if d != to_prev:
-			return d
-	return GridUtil.opposite(to_prev)
+func stations() -> Array[Station]:
+	var result: Array[Station] = []
+	for building: Building in buildings.values():
+		if building is Station:
+			result.append(building)
+	return result
 
 
-## The cell in front of the last rail, where the next rail has to go.
-func open_end_cell() -> Vector2i:
-	return rail_path[-1] + GridUtil.DIR_VECTORS[open_end_dir()]
+## A station that may put a train on `c` right now (area covers it, trains left), or null.
+func station_for(c: Vector2i) -> Station:
+	for station in stations():
+		if station.can_send() and (station.covers(c) or station.cell == c):
+			return station
+	return null
 
 
 # --- Changes ---
@@ -100,25 +99,26 @@ func place_building(id: String, c: Vector2i, steps: int) -> Building:
 
 
 ## Builds every cell of a card layout (see CardShape) in order. Tool entries demolish
-## (bomb) or add ground (bridge) instead.
+## (bomb) or add ground (bridge); upgrade entries automate the building there.
 func place_layout(layout: Array[Dictionary]) -> void:
 	for entry in layout:
 		var c: Vector2i = entry["cell"]
+		if entry.has("upgrade"):
+			(buildings[c] as Building).set_automated()
+			continue
 		match entry.get("tool", ""):
 			"bomb":
 				demolish(c)
 			"bridge":
 				land[c] = true
 				place_building("bridge", c, 0)
+				_land_changed()
 			_:
 				place_building(entry["id"], c, entry["steps"])
 
 
-## Blows up whatever stands on the cell and leaves plain dirt (rails shorten the line).
+## Blows up whatever stands on the cell and leaves plain dirt.
 func demolish(c: Vector2i) -> void:
-	var old := buildings.get(c) as Building
-	if old is Rail and not rail_path.is_empty() and rail_path[-1] == c:
-		rail_path.pop_back()
 	place_building(DIRT_ID, c, 0)
 	_explosion(GridUtil.cell_to_world(c))
 
@@ -156,6 +156,67 @@ func claim_land(center: Vector2i, offsets: Array[Vector2i]) -> void:
 		tween.tween_interval(delay)
 		tween.tween_property(dirt, "position:y", 0.0, 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		delay += 0.05
+	_land_changed()
+
+
+## Every GameRules.land_per_factory new land cells a new factory appears.
+func _land_changed() -> void:
+	GameState.set_stat("land", land.size())
+	var due := 1 + floori(float(land.size() - _start_land) / maxi(1, GameState.rules.land_per_factory))
+	while factories.size() < due:
+		if spawn_factory() == null:
+			break
+
+
+## Puts the next factory of GameRules.factory_sequence on a free spot away from the station.
+func spawn_factory() -> Factory:
+	var rules := GameState.rules
+	var c: Variant = _factory_spot()
+	if c == null:
+		return null
+	var index := factories.size()
+	var ore: String = rules.factory_sequence[index % rules.factory_sequence.size()]
+	var old := buildings.get(c) as Building
+	if old:
+		buildings.erase(c)
+		old.queue_free()
+	var factory := GameData.building_scene("factory").instantiate() as Factory
+	factory.setup(ore, index)
+	_add(factory, c)
+	factories.append(factory)
+	GameState.set_stat("factories", factories.size())
+	Events.factory_appeared.emit(factory)
+	return factory
+
+
+## Free ground in the right distance from the station with free ground around it
+## (relaxed step by step if the island has no such spot).
+func _factory_spot() -> Variant:
+	var rules := GameState.rules
+	for strict in [true, false]:
+		var candidates: Array[Vector2i] = []
+		for c: Vector2i in land:
+			if not is_free_ground(c):
+				continue
+			var distance := absi(c.x - STATION_CELL.x) + absi(c.y - STATION_CELL.y)
+			if strict and (distance < rules.factory_min_distance or distance > rules.factory_max_distance):
+				continue
+			if not strict and distance < 3:
+				continue
+			if _free_around(c) >= (6 if strict else 2):
+				candidates.append(c)
+		if not candidates.is_empty():
+			return candidates[_rng.randi() % candidates.size()]
+	return null
+
+
+func _free_around(c: Vector2i) -> int:
+	var count := 0
+	for x in range(-1, 2):
+		for y in range(-1, 2):
+			if (x != 0 or y != 0) and is_free_ground(c + Vector2i(x, y)):
+				count += 1
+	return count
 
 
 ## Hook dispatch: every building reacts to a train step / the end of a round.
@@ -171,14 +232,14 @@ func notify_round_end() -> void:
 
 # --- Generation ---
 
-func _generate_land(rng: RandomNumberGenerator) -> void:
+func _generate_land() -> void:
 	var rules := GameState.rules
 	var outline := PackedVector2Array()
-	var angle := rng.randf_range(0.0, rules.island_max_angle_step)
+	var angle := _rng.randf_range(0.0, rules.island_max_angle_step)
 	while angle < 360.0:
-		var distance := rng.randf_range(rules.island_min_radius, rules.island_max_radius)
+		var distance := _rng.randf_range(rules.island_min_radius, rules.island_max_radius)
 		outline.append(ISLAND_CENTER + Vector2(distance, 0.0).rotated(deg_to_rad(angle)))
-		angle += rng.randf_range(rules.island_min_angle_step, rules.island_max_angle_step)
+		angle += _rng.randf_range(rules.island_min_angle_step, rules.island_max_angle_step)
 
 	var reach := ceili(rules.island_max_radius) + 1
 	for x in range(-reach, reach + 1):
@@ -187,44 +248,26 @@ func _generate_land(rng: RandomNumberGenerator) -> void:
 			if Geometry2D.is_point_in_polygon(Vector2(c), outline):
 				land[c] = true
 
-	# The start setup (and the cells right next to it) always needs land.
-	var needed: Array[Vector2i] = [POWER_STATION_CELL]
-	needed.append_array(RAIL_CELLS)
-	needed.append_array(START_BUILDINGS.keys())
-	needed.append(RAIL_CELLS[-1] + Vector2i(0, 1))
-	for c in needed:
-		for x in range(-1, 2):
-			for y in range(-1, 2):
-				land[c + Vector2i(x, y)] = true
+	# The start setup (and the cells around it) always needs land.
+	for x in range(-2, 3):
+		for y in range(-2, 3):
+			land[STATION_CELL + Vector2i(x, y)] = true
 
 
 func _build_start_island() -> void:
-	power_station = _place("power_station", POWER_STATION_CELL) as PowerStation
-	var exit_dir := GridUtil.dir_between(POWER_STATION_CELL, RAIL_CELLS[0])
-	power_station.set_rotation_steps(GridUtil.steps_for([GridUtil.SOUTH], [exit_dir]))
-
-	rail_path = [POWER_STATION_CELL]
-	rail_path.append_array(RAIL_CELLS)
-	for i in range(1, rail_path.size()):
-		var c := rail_path[i]
-		var to_prev := GridUtil.dir_between(c, rail_path[i - 1])
-		var to_next := GridUtil.opposite(to_prev)
-		if i < rail_path.size() - 1:
-			to_next = GridUtil.dir_between(c, rail_path[i + 1])
-		var is_straight := to_next == GridUtil.opposite(to_prev)
-		var rail := _place("rail_straight" if is_straight else "rail_curve", c) as Rail
-		rail.connect_dirs(to_prev, to_next)
-
+	_place("station", STATION_CELL)
 	for c: Vector2i in START_BUILDINGS:
 		_place(START_BUILDINGS[c], c)
-
 	for c: Vector2i in land:
 		if not buildings.has(c):
 			_place(DIRT_ID, c)
 
 
 func _place(id: String, c: Vector2i) -> Building:
-	var building := GameData.building_scene(id).instantiate() as Building
+	return _add(GameData.building_scene(id).instantiate() as Building, c)
+
+
+func _add(building: Building, c: Vector2i) -> Building:
 	building.cell = c
 	building.island = self
 	building.position = GridUtil.cell_to_world(c)

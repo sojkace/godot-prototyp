@@ -97,3 +97,24 @@ Querformat, eine Fabrik mit Auftrag, ein Bahnhof mit 4 Zügen, Hand mit 3 Karten
 3 Aktionen, Minen laden an der Strecke, keine Herzen. Dazu 2–3 Forschungen per Meilenstein,
 darunter eine Automaten-Karte. Ziel: prüfen, ob sich der Kreislauf von „von Hand“ zu
 „automatisch“ gut anfühlt.
+
+## Stand der Umsetzung (erster spielbarer Schritt)
+Auf diesem Branch spielbar (Menü → „Neues Spiel“, Querformat):
+- Runden mit **3 Aktionen**, Hand mit **3 Karten + 1 Reserve** („Behalten“), „Neu“ tauscht eine
+  Handkarte für 1 Münze. Karten kosten Items. Deck mit fester Größe (20), Deck-Fenster zum Tauschen.
+- **Freie Strecken:** Schienen-Blöcke dürfen überall beginnen, beide Enden müssen weiterführen
+  (freie Erde, Fabrik oder passendes Gleisende).
+- **Bahnhof** (4 Züge, Reichweite 4 Felder, antippen zeigt sie): Schiene antippen = Zug losschicken.
+  Ein Zug braucht mindestens 4 Felder Strecke bis zur Fabrik (`min_train_route`).
+- **Minen** füllen sich per Antippen (+3, max. 6); Züge laden unterwegs nur Erz ihrer Fabrik.
+- **Fabriken** (Gold/Silber) mit Auftrag und Frist; verpasst = Fluchkarte „Überflutung“ ersetzt
+  eine Deck-Karte. Neue Fabrik alle 12 neuen Landfelder, jede will 3 mehr als die vorige.
+- **Forschung** über Meilensteine: Förderband (Mine automatisch), Haltepunkt (Zug automatisch),
+  Meister (Werkstatt automatisch), Bahnhof-Karte, neue Minen/Flaggen, +1 Aktion.
+- Noch **nicht** drin: Speichern, Fahrdienstleiter, Händler-Automat, Waren aus der Werkstatt als
+  Auftrag, echte Modelle für Fabrik/Bahnhof/Haltepunkt (Platzhalter).
+
+Bot-Werte (40 Runden, je 10 bzw. 6 Spiele): Standard Ø 35 Aufträge, 15 verpasst, 6 Fabriken,
+erste Automatisierung ab Runde ≈ 13 (in 7 von 10 Spielen); „Leicht“ Ø 58 Aufträge, 8 Fabriken.
+In 3 von 10 Standard-Spielen verbaut sich der Bot früh die Strecke und kommt nie in Fahrt –
+wichtig beim Anspielen: passiert das Menschen auch?

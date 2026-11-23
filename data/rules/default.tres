@@ -5,4 +5,4 @@
 [resource]
 script = ExtResource("1_rules")
 title = "Standard"
-description = "Minen geben 3 pro Runde, Bauen nur neben Gebäuden."
+description = "3 Aktionen, 3 Karten pro Runde, Aufträge mit 5 Runden Frist."

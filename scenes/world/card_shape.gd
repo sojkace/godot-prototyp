@@ -4,11 +4,12 @@ class_name CardShape
 ## Rail cells also carry "out": the direction the track leaves that cell.
 ##
 ## Building cards: offsets from the anchor cell, turned as a whole in 90° steps.
-## Rail cards: a path string starting at the open rail end, read in driving direction
-## away from the power station: F = straight, L = curve left, R = curve right.
-## A rail block is rigid: turning it only rotates the whole block, single pieces never
-## change. Since a block must connect to the open end, it can only hang there by one of its
-## two ends, so "steps" picks the end (see rail_variants).
+## Rail cards: a path string read in driving direction from the anchor cell:
+## F = straight, L = curve left, R = curve right. A rail block is rigid: turning it only
+## rotates the whole block (4 headings) or starts it from its other end (rail_variants),
+## single pieces never change. Lines may start anywhere; a block connects to a line when
+## its openings meet an open end.
+## Upgrade cards ({"upgrade": "auto", "targets": [...]}) act on one existing building.
 ## Tool cards ({"tool": "bomb" | "bridge", "coins": cost}) are bought with coins and act on
 ## one cell; see PlacementRules for where they work.
 
@@ -39,6 +40,8 @@ static func icon_id(card_id: String) -> String:
 		return def["icon"]
 	if is_tool_card(def):
 		return def["tool"]
+	if is_upgrade(def):
+		return "auto"
 	if is_rail(def):
 		return RAIL_STRAIGHT if (def["rail"] as String).begins_with("F") else RAIL_CURVE
 	for entry: Array in def["cells"]:
@@ -55,6 +58,10 @@ static func is_tool_card(def: Dictionary) -> bool:
 	return def.has("tool")
 
 
+static func is_upgrade(def: Dictionary) -> bool:
+	return def.has("upgrade")
+
+
 ## True if the rotate button changes anything for this card.
 static func can_turn(def: Dictionary) -> bool:
 	return step_count(def) > 1
@@ -62,15 +69,15 @@ static func can_turn(def: Dictionary) -> bool:
 
 ## Number of different `steps` values worth trying.
 static func step_count(def: Dictionary) -> int:
-	if is_tool_card(def):
+	if is_tool_card(def) or is_upgrade(def):
 		return 1
 	if is_rail(def):
-		return rail_variants(def["rail"]).size()
+		return rail_variants(def["rail"]).size() * 4
 	return 4 if (def["cells"] as Array).size() > 1 else 1
 
 
-## The ways the rigid block can hang at the open end: with its first end (as drawn) or
-## turned around with its other end first. Driving the same track backwards reverses the
+## The two ways to start the rigid block: with its first end (as drawn) or turned around
+## with its other end first. Driving the same track backwards reverses the
 ## moves and swaps left/right: "FL" -> FL, RF; "L" -> L, R; "LR" (S-curve) only LR.
 ## No mirroring - that would change the block's shape.
 static func rail_variants(path: String) -> Array[String]:
@@ -98,8 +105,14 @@ static func rotate_offset(offset: Vector2i, steps: int) -> Vector2i:
 
 static func layout(def: Dictionary, island: Island, anchor: Vector2i, steps: int) -> Array[Dictionary]:
 	if is_rail(def):
+		# steps = heading * variant count + variant
 		var variants := rail_variants(def["rail"])
-		return rail_layout(variants[posmod(steps, variants.size())], island.open_end_cell(), island.open_end_dir())
+		var s := posmod(steps, variants.size() * 4)
+		return rail_layout(variants[s % variants.size()], anchor, floori(float(s) / variants.size()))
+	if is_upgrade(def):
+		var target := island.buildings.get(anchor) as Building
+		return [{"cell": anchor, "id": target.type_id() if target else "dirt",
+			"steps": target.rotation_steps if target else 0, "upgrade": def["upgrade"]}]
 	if is_tool_card(def):
 		var tool: String = def["tool"]
 		return [{"cell": anchor, "id": "bridge" if tool == "bridge" else "dirt", "steps": 0, "tool": tool}]
@@ -129,6 +142,7 @@ static func rail_layout(path: String, start: Vector2i, heading: int) -> Array[Di
 			"cell": pos,
 			"id": id,
 			"steps": GridUtil.steps_for(RAIL_OPENINGS[id], [back, out]),
+			"in": back,
 			"out": out,
 		})
 		pos += GridUtil.DIR_VECTORS[out]

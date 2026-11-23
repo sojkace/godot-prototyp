@@ -2,8 +2,8 @@ class_name ItemCrafter
 extends Building
 ## Workshop: after every round it has GameRules.items_per_crafter items of one random kind
 ## ready (drawn from the item deck). A sign with the item floats above it; the player taps
-## the workshop to collect. Uncollected items do not pile up.
-## With GameRules.crafter_auto_collect the items go straight into the inventory.
+## the workshop to collect (one action). Uncollected items do not pile up.
+## Automated (master card): the items go straight into the inventory.
 
 const ICON_MATERIAL_NAME := "ItemIcon"
 
@@ -26,14 +26,22 @@ func on_round_end() -> void:
 	if is_ready_to_collect():
 		return
 	ready_item = GameState.draw_item_cards(1)[0]
-	if GameState.rules.crafter_auto_collect:
+	if automated:
 		collect()
 	else:
 		_show_icon()
 
 
+func tap_costs_action() -> bool:
+	return is_ready_to_collect()
+
+
 func on_tapped() -> void:
 	collect()
+
+
+func can_automate() -> bool:
+	return true
 
 
 func collect() -> void:

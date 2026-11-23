@@ -73,7 +73,7 @@ horizontal_alignment = 1
 [node name="Subtitle" type="Label" parent="Center/Column"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 22
-text = "Baue Schienen, fülle die Züge, halte das Kraftwerk am Laufen."
+text = "Ziehe Karten, baue Strecken zu den Fabriken und automatisiere deine Insel."
 horizontal_alignment = 1
 autowrap_mode = 3
 

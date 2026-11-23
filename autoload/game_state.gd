@@ -1,14 +1,18 @@
 extends Node
-## Global state of the current run: active rules, coins, hearts, round, items and card decks.
+## Global state of the current run: active rules, coins, items, actions, round, the card
+## deck (draw pile, hand, reserve, discard pile), collection, research and milestones.
 ## Every number comes from `rules` (a GameRules resource), so rule variants can be swapped
 ## without touching code.
 
 signal coins_changed(value: int)
-signal hearts_changed(value: int)
 signal round_changed(round_number: int)
+signal actions_changed(value: int)
 signal items_changed
-signal decks_changed
-signal game_over(won: bool)
+## Hand, reserve, deck composition or piles changed.
+signal cards_changed
+## Research points, finished research or collection changed.
+signal research_changed
+signal milestone_reached(milestone: Dictionary)
 
 const RULES_DIR := "res://data/rules/"
 const DEFAULT_RULES := "default"
@@ -17,31 +21,42 @@ const DEFAULT_RULES := "default"
 var rules_id := DEFAULT_RULES
 var rules: GameRules
 
-## Index into rules.levels; set by the main menu before the game scene starts.
-var level_index := 0
-
 var coins := 0:
 	set(value):
 		coins = value
 		coins_changed.emit(coins)
 
-var hearts := 0:
-	set(value):
-		hearts = maxi(value, 0)
-		hearts_changed.emit(hearts)
-
-## 0-based index into the current level's rounds.
+## 0-based round counter (the game is endless).
 var round_index := 0:
 	set(value):
 		round_index = value
 		round_changed.emit(round_index + 1)
 
+## Actions left this round.
+var actions := 0:
+	set(value):
+		actions = maxi(value, 0)
+		actions_changed.emit(actions)
+
 ## item id -> count
 var items := {}
-## deck id -> Array of building ids (front = top card)
-var _draw_piles := {}
-## deck id -> Array of played building ids
-var _discard_piles := {}
+
+## The deck: always rules.deck_size card ids, spread over these places.
+var draw_pile: Array[String] = []
+var hand: Array[String] = []
+var reserve: Array[String] = []
+var discard_pile: Array[String] = []
+
+## Card ids that may be swapped into the deck.
+var collection: Array[String] = []
+var research_points := 0
+## Ids of finished research entries.
+var researched: Array[String] = []
+
+## Counters for milestones and statistics: orders_done, orders_missed, trains_sent,
+## cards_played, land, factories, manual_actions, curses.
+var stats := {}
+var _milestones_done: Array[int] = []
 var _item_pile: Array[String] = []
 
 
@@ -79,48 +94,110 @@ func load_rules(id: String) -> void:
 
 func reset() -> void:
 	coins = rules.start_coins
-	hearts = rules.start_hearts
 	round_index = 0
 	items = rules.start_items.duplicate()
 	_item_pile = _shuffled(rules.item_deck)
-	_draw_piles.clear()
-	_discard_piles.clear()
-	for deck_id in rules.deck_order:
-		_draw_piles[deck_id] = _shuffled(rules.decks[deck_id]["cards"])
-		_discard_piles[deck_id] = []
+	collection = rules.start_collection.duplicate()
+	research_points = 0
+	researched.clear()
+	stats = {"orders_done": 0, "orders_missed": 0, "trains_sent": 0, "cards_played": 0,
+		"land": 0, "factories": 0, "manual_actions": 0, "curses": 0}
+	_milestones_done.clear()
+	draw_pile = _shuffled(rules.start_deck)
+	hand.clear()
+	reserve.clear()
+	discard_pile.clear()
+	if draw_pile.size() != rules.deck_size:
+		push_warning("start_deck has %d cards, deck_size is %d" % [draw_pile.size(), rules.deck_size])
+	actions = max_actions()
 	items_changed.emit()
-	decks_changed.emit()
+	cards_changed.emit()
+	research_changed.emit()
 
 
-# --- Level & rounds ---
+# --- Round & actions ---
 
-func level() -> Dictionary:
-	return rules.levels[clampi(level_index, 0, rules.levels.size() - 1)]
-
-
-func rounds() -> Array:
-	return level()["rounds"]
-
-
-func round_count() -> int:
-	return rounds().size()
+func max_actions() -> int:
+	var result := rules.actions_per_round
+	for entry in rules.research:
+		if researched.has(entry["id"]):
+			result += int(entry.get("actions", 0))
+	return result
 
 
-## Trains of the current round as a string of train codes, e.g. "sb".
-func trains_this_round() -> String:
-	return rounds()[mini(round_index, round_count() - 1)]
-
-
-## Call after all trains of a round arrived. Returns true if the run goes on.
-func finish_round() -> bool:
-	if hearts <= 0:
-		game_over.emit(false)
+## Spends one action for manual work. False if none is left.
+func spend_action() -> bool:
+	if actions <= 0:
 		return false
-	if round_index + 1 >= round_count():
-		game_over.emit(true)
-		return false
-	round_index += 1
+	actions -= 1
+	add_stat("manual_actions")
 	return true
+
+
+## Next round: actions refill, the hand (not the reserve) is discarded, new cards drawn.
+func next_round() -> void:
+	round_index += 1
+	actions = max_actions()
+	discard_pile.append_array(hand)
+	hand.clear()
+	draw_hand()
+
+
+func draw_hand() -> void:
+	while hand.size() < rules.hand_size:
+		if draw_pile.is_empty():
+			if discard_pile.is_empty():
+				break
+			draw_pile = discard_pile.duplicate()
+			draw_pile.shuffle()
+			discard_pile.clear()
+		hand.append(draw_pile.pop_back())
+	cards_changed.emit()
+
+
+# --- Stats & milestones ---
+
+func add_stat(stat: String, amount := 1) -> void:
+	set_stat(stat, int(stats.get(stat, 0)) + amount)
+
+
+func set_stat(stat: String, value: int) -> void:
+	stats[stat] = value
+	_check_milestones()
+
+
+func _check_milestones() -> void:
+	for i in rules.milestones.size():
+		var milestone: Dictionary = rules.milestones[i]
+		if _milestones_done.has(i) or int(stats.get(milestone["stat"], 0)) < int(milestone["target"]):
+			continue
+		_milestones_done.append(i)
+		research_points += int(milestone["points"])
+		milestone_reached.emit(milestone)
+		research_changed.emit()
+
+
+func milestone_done(index: int) -> bool:
+	return _milestones_done.has(index)
+
+
+# --- Research ---
+
+func can_research(entry: Dictionary) -> bool:
+	return not researched.has(entry["id"]) and research_points >= int(entry["cost"])
+
+
+func do_research(entry: Dictionary) -> void:
+	if not can_research(entry):
+		return
+	research_points -= int(entry["cost"])
+	researched.append(entry["id"])
+	for card_id in entry.get("unlocks", []):
+		if not collection.has(card_id):
+			collection.append(card_id)
+	if entry.has("actions"):
+		actions += int(entry["actions"])
+	research_changed.emit()
 
 
 # --- Items ---
@@ -135,13 +212,6 @@ func add_items(list: Array[String]) -> void:
 	items_changed.emit()
 
 
-## Draws `count` item cards from the item deck into the inventory. Returns what was drawn.
-func deliver_items(count: int) -> Array[String]:
-	var drawn := draw_item_cards(count)
-	add_items(drawn)
-	return drawn
-
-
 ## Takes cards from the item deck (refilled when empty) without adding them anywhere.
 func draw_item_cards(count: int) -> Array[String]:
 	var drawn: Array[String] = []
@@ -149,6 +219,13 @@ func draw_item_cards(count: int) -> Array[String]:
 		if _item_pile.is_empty():
 			_item_pile = _shuffled(rules.item_deck)
 		drawn.append(_item_pile.pop_back())
+	return drawn
+
+
+## Draws `count` item cards straight into the inventory. Returns what was drawn.
+func deliver_items(count: int) -> Array[String]:
+	var drawn := draw_item_cards(count)
+	add_items(drawn)
 	return drawn
 
 
@@ -165,67 +242,148 @@ func trade_item(give: String, get_item: String) -> void:
 	items_changed.emit()
 
 
-# --- Card decks ---
+# --- Cards ---
 
-func deck_ids() -> Array[String]:
-	return rules.deck_order
-
-
-func deck_name(deck_id: String) -> String:
-	return rules.decks[deck_id].get("name", deck_id)
+func card_cost(card_id: String) -> Dictionary:
+	return CardShape.definition(card_id).get("cost", {})
 
 
-func deck_cost(deck_id: String) -> Array:
-	return rules.decks[deck_id]["cost"]
-
-
-func top_card(deck_id: String) -> String:
-	var pile: Array = _draw_piles.get(deck_id, [])
-	return pile[0] if not pile.is_empty() else ""
-
-
-func cards_left(deck_id: String) -> int:
-	return (_draw_piles.get(deck_id, []) as Array).size()
-
-
-func can_afford(deck_id: String) -> bool:
-	for item in deck_cost(deck_id):
-		if item_count(item) < 1:
+func can_pay(card_id: String) -> bool:
+	var cost := card_cost(card_id)
+	for item in cost:
+		if item_count(item) < int(cost[item]):
 			return false
-	return top_card(deck_id) != ""
+	return true
 
 
-## Pays the deck's cost and moves its top card to the discard pile.
-## An empty deck is refilled from its shuffled discard pile.
-func play_card(deck_id: String) -> void:
-	for item in deck_cost(deck_id):
-		items[item] = item_count(item) - 1
-	_move_top_to_discard(deck_id)
+## Cards the player can play right now: the hand, then the reserve.
+## A "slot" is an index into playable_cards().
+func playable_cards() -> Array[String]:
+	var result: Array[String] = hand.duplicate()
+	result.append_array(reserve)
+	return result
+
+
+func card_in_slot(slot: int) -> String:
+	var cards := playable_cards()
+	return cards[slot] if slot >= 0 and slot < cards.size() else ""
+
+
+func is_reserved_slot(slot: int) -> bool:
+	return slot >= hand.size()
+
+
+## Pays the card's cost and moves it to the discard pile.
+func play_slot(slot: int) -> void:
+	var card_id := card_in_slot(slot)
+	if card_id == "":
+		return
+	var cost := card_cost(card_id)
+	for item in cost:
+		items[item] = item_count(item) - int(cost[item])
+	_take_slot(slot)
+	discard_pile.append(card_id)
+	add_stat("cards_played")
 	items_changed.emit()
-	decks_changed.emit()
+	cards_changed.emit()
 
 
-func can_discard(deck_id: String) -> bool:
-	return coins >= rules.discard_cost and top_card(deck_id) != ""
+func can_reserve(slot: int) -> bool:
+	return not is_reserved_slot(slot) and card_in_slot(slot) != "" and reserve.size() < rules.reserve_slots
 
 
-## Moves the top card to the discard pile without building it. Costs coins.
-func discard_top(deck_id: String) -> void:
-	if not can_discard(deck_id):
+## Moves a hand card to the reserve (kept when the round ends).
+func reserve_slot(slot: int) -> void:
+	if can_reserve(slot):
+		reserve.append(hand[slot])
+		hand.remove_at(slot)
+		cards_changed.emit()
+
+
+func can_discard(slot: int) -> bool:
+	return card_in_slot(slot) != "" and coins >= rules.discard_cost
+
+
+## Throws a card away for coins and draws a new one into the hand.
+func discard_slot(slot: int) -> void:
+	if not can_discard(slot):
 		return
 	coins -= rules.discard_cost
-	_move_top_to_discard(deck_id)
-	decks_changed.emit()
+	discard_pile.append(card_in_slot(slot))
+	_take_slot(slot)
+	draw_hand()
 
 
-func _move_top_to_discard(deck_id: String) -> void:
-	var pile: Array = _draw_piles[deck_id]
-	var discard: Array = _discard_piles[deck_id]
-	discard.append(pile.pop_front())
-	if pile.is_empty():
-		pile.append_array(discard)
-		pile.shuffle()
-		discard.clear()
+func _take_slot(slot: int) -> void:
+	if is_reserved_slot(slot):
+		reserve.remove_at(slot - hand.size())
+	else:
+		hand.remove_at(slot)
+
+
+# --- Deck building ---
+
+## Every card of the deck, wherever it is right now.
+func deck_cards() -> Array[String]:
+	var result: Array[String] = draw_pile.duplicate()
+	result.append_array(hand)
+	result.append_array(reserve)
+	result.append_array(discard_pile)
+	return result
+
+
+## card id -> count over the whole deck.
+func deck_counts() -> Dictionary:
+	var counts := {}
+	for card_id in deck_cards():
+		counts[card_id] = counts.get(card_id, 0) + 1
+	return counts
+
+
+func is_curse(card_id: String) -> bool:
+	return CardShape.definition(card_id).get("curse", false)
+
+
+func swap_price(out_card: String) -> int:
+	return rules.curse_swap_cost if is_curse(out_card) else rules.swap_cost
+
+
+func can_swap(out_card: String, in_card: String) -> bool:
+	return out_card != in_card and deck_counts().has(out_card) and collection.has(in_card) \
+		and coins >= swap_price(out_card)
+
+
+## Replaces one copy of `out_card` in the deck with `in_card` (deck size stays the same).
+func swap_card(out_card: String, in_card: String) -> void:
+	if not can_swap(out_card, in_card):
+		return
+	coins -= swap_price(out_card)
+	_replace_one(out_card, in_card)
+	cards_changed.emit()
+
+
+## An expired order: a random normal card of the deck turns into a curse card.
+func add_curse() -> void:
+	var candidates: Array[String] = []
+	for card_id in deck_cards():
+		if not is_curse(card_id):
+			candidates.append(card_id)
+	if candidates.is_empty():
+		return
+	_replace_one(candidates.pick_random(), rules.curse_card)
+	add_stat("curses")
+	cards_changed.emit()
+
+
+## Replaces a copy in the draw pile first (so the change shows up soon), then elsewhere.
+func _replace_one(out_card: String, in_card: String) -> void:
+	for pile: Array[String] in [draw_pile, discard_pile, hand, reserve]:
+		var index := pile.find(out_card)
+		if index >= 0:
+			pile[index] = in_card
+			if pile == draw_pile:
+				draw_pile.shuffle()
+			return
 
 
 ## Expands {id: count} into a shuffled list.

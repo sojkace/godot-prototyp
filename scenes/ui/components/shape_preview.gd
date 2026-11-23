@@ -14,7 +14,10 @@ const COLORS := {
 	"marketplace": Color(0.35, 0.75, 0.4),
 	"flag_normal": Color(0.9, 0.3, 0.3),
 	"flag_pointy": Color(0.9, 0.3, 0.3),
+	"station": Color(0.3, 0.35, 0.45),
+	"halt": Color(0.5, 0.4, 0.7),
 }
+const UPGRADE_COLOR := Color(1.0, 0.8, 0.2)
 const ENTRY_COLOR := Color(1, 1, 1, 0.35)
 
 var card_id := "":
@@ -31,6 +34,11 @@ func _draw() -> void:
 	if card_id == "":
 		return
 	var def := CardShape.definition(card_id)
+	if CardShape.is_upgrade(def) or CardShape.is_tool_card(def):
+		var side := minf(size.x, size.y) * 0.6
+		draw_circle(size / 2.0, side / 2.0, UPGRADE_COLOR)
+		draw_circle(size / 2.0, side / 5.0, Color(0.2, 0.2, 0.2))
+		return
 	var cells := {}  # Vector2i -> building id
 	var entry := Vector2i(999, 999)
 	if CardShape.is_rail(def):
