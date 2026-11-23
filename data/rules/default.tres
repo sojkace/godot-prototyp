@@ -5,4 +5,4 @@
 [resource]
 script = ExtResource("1_rules")
 title = "Standard"
-description = "Werte wie im Unity-Original (geschätzt)."
+description = "Minen geben 3 pro Runde, Bauen nur neben Gebäuden."

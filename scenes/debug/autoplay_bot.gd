@@ -4,9 +4,10 @@ extends Node
 ##   `-- --autoplay`      plays one game fast and prints every round.
 ##   `-- --simulate=N`    plays N games quietly and prints a summary (win rate, coins ...).
 ## Combine with `--rules=<variant>` and `--level=N` to compare rule variants.
-## Strategy: trade the most plentiful item for the scarcest one, play every affordable
-## card (rails at the open end, buildings near the screen center), discard a card that
-## cannot be placed (once per deck per turn), then start the trains.
+## Strategy: collect every workshop, trade the most plentiful item for the scarcest one,
+## play every affordable card at its best-scored spot (see _score: mines along the rails,
+## rails towards open ground, flags where they gain land, water away from the rails),
+## discard a card that cannot be placed (once per deck per turn), then start the trains.
 
 ## Results of finished games; static, so it survives the scene reload between games.
 static var _results: Array[Dictionary] = []
@@ -14,6 +15,8 @@ static var _games_total := 0
 
 var game: Main
 var verbose := true
+## building id -> area_shape (read once from the scene)
+var _area_cache := {}
 
 
 ## Creates a bot if the command line asks for one, otherwise returns null.
@@ -44,6 +47,7 @@ func _ready() -> void:
 
 
 func _play_turn() -> void:
+	_collect()
 	_trade()
 	var discarded := {}
 	var acted := true
@@ -53,13 +57,11 @@ func _play_turn() -> void:
 			if not GameState.can_afford(deck_id):
 				continue
 			var card := GameState.top_card(deck_id)
-			game.start_placing(deck_id)
-			if game.confirm_placing():
+			var best := _best_option(card)
+			if not best.is_empty() and game.place_card(deck_id, best["anchor"], best["steps"]):
 				_log("  played %s" % card)
 				acted = true
-				continue
-			game.cancel_placing()
-			if GameState.can_discard(deck_id) and not discarded.has(deck_id):
+			elif GameState.can_discard(deck_id) and not discarded.has(deck_id):
 				discarded[deck_id] = true
 				_log("  discarded %s" % card)
 				game.discard(deck_id)
@@ -67,6 +69,74 @@ func _play_turn() -> void:
 			else:
 				_log("  could not place %s" % card)
 	game.start_round()
+
+
+func _collect() -> void:
+	for building: Building in game.island.all_buildings():
+		var crafter := building as ItemCrafter
+		if crafter and crafter.is_ready_to_collect():
+			game.tap_cell(crafter.cell)
+
+
+func _best_option(card_id: String) -> Dictionary:
+	var best := {}
+	var best_score := -INF
+	for option in PlacementRules.options(game.island, card_id):
+		var score := _score(option["layout"]) + randf() * 0.1
+		if score > best_score:
+			best_score = score
+			best = option
+	return best
+
+
+func _score(layout: Array[Dictionary]) -> float:
+	var island := game.island
+	var score := 0.0
+	var last: Dictionary = layout[-1]
+	if last.has("out"):  # rail: prefer much free ground ahead of the new end
+		var exit: Vector2i = last["cell"] + GridUtil.DIR_VECTORS[last["out"]]
+		for x in range(-2, 3):
+			for y in range(-2, 3):
+				if island.is_free_ground(exit + Vector2i(x, y)):
+					score += 1.0
+		return score
+	for entry in layout:
+		var id: String = entry["id"]
+		var c: Vector2i = entry["cell"]
+		var offsets := GridUtil.area_offsets(_area_shape(id))
+		var rail_distance := _distance_to_rails(c)
+		if id.begins_with("mine"):
+			for offset in offsets:
+				if island.rail_path.has(c + offset):
+					score += 10.0
+		elif id == "observer":
+			for offset in offsets:
+				if island.buildings.get(c + offset) is Mine:
+					score += 5.0
+		elif id.begins_with("flag"):
+			for offset in offsets:
+				if not island.is_land(c + offset):
+					score += 1.0
+		else:  # water, workshops, markets: keep the space along the rails free
+			score += minf(rail_distance, 4.0)
+			if id == "water" and (c - island.open_end_cell()).length() < 3.0:
+				score -= 10.0
+	return score
+
+
+func _distance_to_rails(c: Vector2i) -> float:
+	var best := INF
+	for r in game.island.rail_path:
+		best = minf(best, Vector2(c - r).length())
+	return best
+
+
+func _area_shape(id: String) -> String:
+	if not _area_cache.has(id):
+		var building := GameData.building_scene(id).instantiate() as Building
+		_area_cache[id] = building.area_shape
+		building.free()
+	return _area_cache[id]
 
 
 ## At every marketplace with trades left, swap the most plentiful item for the scarcest offer.

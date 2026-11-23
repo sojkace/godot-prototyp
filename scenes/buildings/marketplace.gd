@@ -15,6 +15,8 @@ var rounds_until_refresh := 0
 
 
 func _ready() -> void:
+	if is_preview:
+		return
 	trades_left = GameState.rules.market_trades_per_round
 	_refresh_offers()
 	_update_model()
@@ -40,6 +42,10 @@ func trade(offer_index: int, give_item: String) -> void:
 	trades_left -= 1
 	_update_model()
 	changed.emit()
+
+
+func on_tapped() -> void:
+	Events.market_requested.emit(self)
 
 
 func on_round_end() -> void:
