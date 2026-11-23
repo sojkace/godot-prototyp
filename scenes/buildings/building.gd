@@ -7,15 +7,16 @@ extends Node3D
 ## no changes to the game loop. Where things may be built: PlacementRules.
 ##   on_placed()          right after the player built it (flags claim land)
 ##   on_train_step()      after every train step (mines load trains)
-##   on_round_end()       after every round (workshops get items ready, factories tick ...)
+##   on_round_end()       after every round (automated mines dig, factories tick ...)
 ##   tap_costs_action()   true if tapping now does manual work (costs one action)
-##   on_tapped()          the player tapped the building (fill a mine, collect items ...)
-##   can_automate()       an "auto" upgrade card may be played on it (see set_automated)
+##   on_tapped()          the player tapped the building (fill a mine ...)
+##   can_upgrade(kind)    an upgrade card of this kind may be played on it ("auto" by default
+##                        when can_automate(); rails take "halt"), apply_upgrade(kind) does it
 
 ## True for plain ground (dirt) that other buildings may be built on.
 @export var is_buildable_ground := false
 ## Area of effect around the building (see GridUtil.area_offsets).
-@export_enum("none", "square", "cross", "diamond", "long_cross", "station") var area_shape := "none"
+@export_enum("none", "square", "cross", "diamond", "long_cross") var area_shape := "none"
 ## Non-rail cards must touch a building with this flag (water does not count).
 @export var counts_as_neighbor := true
 
@@ -37,7 +38,7 @@ func set_rotation_steps(steps: int) -> void:
 	rotation.y = rotation_steps * PI / 2.0
 
 
-## Building type, taken from the scene file name (e.g. "mine_gold", "itemcrafter").
+## Building type, taken from the scene file name (e.g. "mine_gold", "flag_normal").
 func type_id() -> String:
 	return scene_file_path.get_file().get_basename()
 
@@ -118,3 +119,12 @@ func on_tapped() -> void:
 
 func can_automate() -> bool:
 	return false
+
+
+func can_upgrade(kind: String) -> bool:
+	return kind == "auto" and can_automate() and not automated
+
+
+func apply_upgrade(kind: String) -> void:
+	if kind == "auto":
+		set_automated()

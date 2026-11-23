@@ -1,9 +1,10 @@
 class_name Factory
 extends Building
 ## Destination of a rail line. Always has one order: `order_amount` loads of its ore within
-## `rounds_left` rounds. Delivered loads pay coins; a finished order pays item cards and
-## starts the next one. An expired order puts a curse card into the deck.
-## Every new factory wants more than the one before (GameRules.order_base / order_growth).
+## `rounds_left` rounds. A finished order pays coins and starts the next, bigger one
+## (GameRules.order_growth_per_order). An expired order puts a curse card into the deck and
+## starts a new one of the same size. Every new factory starts with more than the one before
+## (GameRules.order_base / order_growth).
 
 const ORE_COLORS := {"gold": Color(0.95, 0.75, 0.2), "silver": Color(0.78, 0.8, 0.86)}
 
@@ -11,6 +12,8 @@ const ORE_COLORS := {"gold": Color(0.95, 0.75, 0.2), "silver": Color(0.78, 0.8, 
 var ore := "gold"
 ## 0 = first factory; later ones want more.
 var factory_index := 0
+## Orders this factory got finished; each one makes the next order bigger.
+var orders_finished := 0
 var order_amount := 0
 var delivered := 0
 var rounds_left := 0
@@ -30,7 +33,8 @@ func setup(ore_type: String, index: int) -> void:
 
 func new_order() -> void:
 	var rules := GameState.rules
-	order_amount = rules.order_base + rules.order_growth * factory_index
+	order_amount = rules.order_base + rules.order_growth * factory_index \
+		+ rules.order_growth_per_order * orders_finished
 	delivered = 0
 	rounds_left = rules.order_deadline
 	_update_info()
@@ -49,8 +53,7 @@ func receive(train: Train) -> void:
 	GameState.coins += amount * rules.coins_per_load
 	if missing() == 0:
 		GameState.coins += rules.coins_per_order
-		var reward := GameState.deliver_items(rules.items_per_order)
-		Events.items_delivered.emit(reward, self)
+		orders_finished += 1
 		GameState.add_stat("orders_done")
 		Events.order_done.emit(self)
 		new_order()

@@ -40,8 +40,7 @@ static func steps_for(base_dirs: Array, target_dirs: Array) -> int:
 
 ## Area patterns (offsets around a building), matching the grid_* models from Blender.
 ## "square": 8 neighbours (gold mine), "cross": 4 direct neighbours (silver mine),
-## "diamond": all cells within 2 steps (flag), "long_cross": 4 cells in each direction (pointy flag),
-## "station": all cells within 4 steps (where a station may put its trains).
+## "diamond": all cells within 2 steps (flag), "long_cross": 4 cells in each direction (pointy flag).
 static func area_offsets(shape: String) -> Array[Vector2i]:
 	var result: Array[Vector2i] = []
 	for x in range(-4, 5):
@@ -58,8 +57,6 @@ static func area_offsets(shape: String) -> Array[Vector2i]:
 					keep = absi(x) + absi(y) <= 2
 				"long_cross":
 					keep = x == 0 or y == 0
-				"station":
-					keep = absi(x) + absi(y) <= 4
 			if keep:
 				result.append(Vector2i(x, y))
 	return result

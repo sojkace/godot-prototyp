@@ -8,7 +8,7 @@ extends Node3D
 ## Also reports taps on the island while not placing (cell_tapped).
 
 signal placement_changed(active: bool, valid: bool, can_rotate: bool)
-## Tap on a cell while not placing (collect items, open the marketplace ...).
+## Tap on a cell while not placing (fill a mine, send a train ...).
 signal cell_tapped(cell: Vector2i)
 
 ## Max finger/mouse movement (px) that still counts as a tap and not a camera drag.
@@ -204,7 +204,7 @@ func _show_hidden() -> void:
 func _cell_at_screen_center() -> Vector2i:
 	var hit: Variant = _ground_point(get_viewport().get_visible_rect().size / 2.0)
 	if hit == null:
-		return Island.STATION_CELL
+		return Island.START_CELL
 	var point: Vector3 = hit
 	return Vector2i(roundi(point.x), roundi(point.z))
 

@@ -2,7 +2,8 @@ class_name Mine
 extends Building
 ## Holds ore (`stock`). Tapping it (one action) digs GameRules.mine_tap_amount more; an
 ## automated mine (conveyor card) digs by itself every round. Trains heading to a factory of
-## the same ore take ore when they pass through the mine's area.
+## the same ore take GameRules.loads_per_mine_step for every rail cell of their route inside
+## the mine's area: full trains need long lines through mine areas, not shortcuts.
 
 ## Ore this mine produces; factories with the same ore want it.
 @export var ore := "gold"

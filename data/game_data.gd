@@ -1,5 +1,5 @@
 class_name GameData
-## Static catalog: item and building names, icons, scenes and range overlays.
+## Static catalog: ore and building names, icons, scenes and range overlays.
 ## Balance numbers are NOT here - they live in GameRules (`res://data/rules/*.tres`).
 ##
 ## Adding a new building type:
@@ -7,11 +7,9 @@ class_name GameData
 ##   2. name in BUILDING_NAMES, icon `res://assets/ui/icons/<id>.png` (tools/blender/render_icons.py)
 ##   3. add a card using it to GameRules.cards and put the card into a deck
 
-const ITEMS: Array[String] = ["wood", "stone", "metal", "glass"]
-const ITEM_NAMES := {"wood": "Holz", "stone": "Stein", "metal": "Metall", "glass": "Glas",
-	"gold": "Gold", "silver": "Silber"}
+const ITEM_NAMES := {"gold": "Gold", "silver": "Silber"}
 ## Icon ids without an own picture that reuse another one.
-const ICON_ALIASES := {"gold": "mine_gold", "silver": "mine_silver", "station": "power_station",
+const ICON_ALIASES := {"gold": "mine_gold", "silver": "mine_silver",
 	"halt": "observer", "factory": "fabric"}
 
 const BUILDING_NAMES := {
@@ -19,12 +17,9 @@ const BUILDING_NAMES := {
 	"rail_curve": "Kurve",
 	"mine_gold": "Goldmine",
 	"mine_silver": "Silbermine",
-	"itemcrafter": "Werkstatt",
 	"flag_normal": "Flagge",
 	"flag_pointy": "Langflagge",
 	"observer": "Beobachter",
-	"marketplace": "Marktplatz",
-	"station": "Bahnhof",
 	"halt": "Haltepunkt",
 	"factory": "Fabrik",
 	"water": "Wasser",
@@ -41,7 +36,7 @@ const AREA_OVERLAYS := {
 }
 
 
-## Icon for an item / building / card icon id, or null if none was rendered.
+## Icon for an ore / building / card icon id, or null if none was rendered.
 static func icon(id: String) -> Texture2D:
 	var path := "res://assets/ui/icons/%s.png" % ICON_ALIASES.get(id, id)
 	return load(path) if ResourceLoader.exists(path) else null

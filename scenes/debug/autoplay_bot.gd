@@ -8,9 +8,10 @@ extends Node
 ## Combine with `--rules=<variant>` and `--seed=N` to compare rule variants.
 ## Strategy per round:
 ##   1. research whatever is affordable, swap new cards into the deck (curses out first)
-##   2. play affordable hand cards at their best-scored spot (rails towards factories,
-##      mines next to lines of the matching factory, flags for land, upgrades on mines)
-##   3. spend actions: dig mines that serve a line, send trains, collect workshops
+##   2. play hand cards at their best-scored spot (rails towards factories, mines next to
+##      lines of the matching factory, flags for land, upgrades on mines); every card costs
+##      an action, one is kept back when a line has ore waiting for a train
+##   3. spend the other actions: send trains, dig mines that serve a line
 ##   4. end the round
 
 ## Results of finished games; static, so it survives the scene reload between games.
@@ -22,7 +23,7 @@ var game: Main
 var verbose := true
 ## building id -> area_shape (read once from the scene)
 var _area_cache := {}
-## Round in which the first automation (conveyor / halt / master) was built (-1 = never).
+## Round in which the first automation (conveyor / halt) was built (-1 = never).
 var _first_auto_round := -1
 
 
@@ -62,7 +63,6 @@ func _play_turn() -> void:
 		_finish()
 		return
 	_research_and_swap()
-	_trade()
 	_play_cards()
 	_spend_actions()
 	game.end_round()
@@ -70,8 +70,9 @@ func _play_turn() -> void:
 
 # --- 1. Research & deck ---
 
-const RESEARCH_ORDER: Array[String] = ["conveyor", "halt", "land", "organisation", "master",
-	"station", "big_mines", "trade"]
+const RESEARCH_ORDER: Array[String] = ["conveyor", "halt", "land", "organisation", "big_mines"]
+## A new line should start at least this far from its factory, so it can pass mines.
+const MIN_START_DISTANCE := 5
 
 
 func _research_and_swap() -> void:
@@ -94,7 +95,7 @@ func _research_and_swap() -> void:
 				if GameState.coins >= GameState.swap_price(card_id):
 					game.swap_card(card_id, "rail_f")
 					_log("  swapped out curse")
-	var wanted := {"auto_mine": 3, "halt": 2, "auto_crafter": 1, "station": 1, "mine_silver_twin": 2}
+	var wanted := {"auto_mine": 3, "halt": 2, "mine_silver_twin": 2}
 	for card_id: String in wanted:
 		if not GameState.collection.has(card_id):
 			continue
@@ -120,20 +121,18 @@ func _weakest_card() -> String:
 func _play_cards() -> void:
 	var tries := 0
 	var slot := 0
-	while slot < GameState.playable_cards().size() and tries < 20:
+	while slot < GameState.hand.size() and tries < 20:
 		tries += 1
 		var card := GameState.card_in_slot(slot)
-		if not game.can_play(slot):
-			slot += 1
-			continue
+		if not game.can_play(slot) or GameState.actions <= _actions_kept_back():
+			break
 		var best := _best_option(card)
-		if best.is_empty() or best["score"] < 0.0:
+		# Water and curse cards only block the hand: put them somewhere harmless anyway.
+		var clog := card == "pond" or GameState.is_curse(card)
+		if best.is_empty() or (best["score"] < 0.0 and not clog):
 			if GameState.coins >= 6 and GameState.can_discard(slot):
 				game.discard(slot)
 				_log("  redrew %s" % card)
-			elif GameState.can_reserve(slot):
-				game.reserve(slot)
-				_log("  kept %s" % card)
 			else:
 				slot += 1
 			continue
@@ -163,6 +162,8 @@ func _score(card_id: String, layout: Array[Dictionary]) -> float:
 		var target := game.island.buildings.get(layout[0]["cell"]) as Building
 		if target is Mine:
 			return 5.0 + (5.0 if _mine_serves_line(target as Mine) else 0.0)
+		if target is Rail:
+			return _score_halt(target.cell)
 		return 4.0
 	var score := 0.0
 	for entry in layout:
@@ -179,10 +180,6 @@ func _score(card_id: String, layout: Array[Dictionary]) -> float:
 					score += 1.0
 			# Growing the island brings new factories once the current ones are served.
 			score += 2.0 if _all_connected() else -2.0
-		elif id == "halt":
-			score += 8.0 if _halt_useful(c) else -5.0
-		elif id == "station":
-			score += 3.0
 		elif id == "water":
 			score += minf(_distance_to_rails(c), 4.0) - (6.0 if GameState.is_curse(card_id) else 3.0)
 		else:
@@ -190,8 +187,8 @@ func _score(card_id: String, layout: Array[Dictionary]) -> float:
 	return score
 
 
-## Rails: build a line from the station area to the target factory, then extend finished
-## lines backwards (past mines, into station range) until trains can use them.
+## Rails: build a line towards the target factory, then extend finished lines backwards
+## past more mines (each mine gives a train only a little, so long lines fill trains).
 func _score_rail(layout: Array[Dictionary]) -> float:
 	var island := game.island
 	var last: Dictionary = layout[-1]
@@ -223,21 +220,14 @@ func _score_rail(layout: Array[Dictionary]) -> float:
 			return -5.0
 		score += layout.size() * 0.5
 		score += _mine_bonus(layout, factory.ore)
-		var in_range := false
-		for entry in layout:
-			in_range = in_range or _in_any_station(entry["cell"])
-		if _line_has_start(joined):
-			score -= 3.0
-		else:
-			score += 8.0 if in_range else 2.0
+		score += -3.0 if _line_has_start(joined) else 8.0
 		return score
 	var factory_end := Vector2i(9999, 9999)
 	for end_cell in [front, back]:
 		if island.buildings.get(end_cell) == target:
 			factory_end = end_cell
 	if factory_end.x != 9999:
-		var length := layout.size() + (RailNetwork.line_cells(island, joined).size() if joins else 0)
-		score += 30.0 if length >= GameState.rules.min_train_route else 4.0
+		score += 30.0
 	else:
 		var start_cell: Vector2i = joined if joins else first["cell"]
 		var before := _manhattan(start_cell, target.cell)
@@ -246,9 +236,7 @@ func _score_rail(layout: Array[Dictionary]) -> float:
 		if not joins:
 			if _has_line_towards(target):
 				score -= 8.0  # do not start a second line for the same factory
-			if not _in_any_station(first["cell"]) and not _in_any_station(last["cell"]):
-				score -= 4.0
-			if before < GameState.rules.min_train_route + 1:
+			if before < MIN_START_DISTANCE:
 				score -= 6.0  # too close to the factory to be a useful start
 	if joins:
 		score += 6.0
@@ -266,11 +254,10 @@ func _mine_bonus(layout: Array[Dictionary], ore: String) -> float:
 	return bonus
 
 
-## True if a train may start somewhere on the line through `c`.
+## True if a train may start somewhere on the line through `c` (it passes a matching mine).
 func _line_has_start(c: Vector2i) -> bool:
 	for cell: Vector2i in RailNetwork.line_cells(game.island, c):
-		if game.island.buildings.get(cell) is Rail and _in_any_station(cell) \
-				and (RailNetwork.route(game.island, cell).get("path", []) as Array).size() >= GameState.rules.min_train_route:
+		if game.train_problem(cell) == "":
 			return true
 	return false
 
@@ -327,40 +314,27 @@ func _has_line_towards(factory: Factory) -> bool:
 	return false
 
 
-func _halt_useful(c: Vector2i) -> bool:
-	for dir_vector in GridUtil.DIR_VECTORS:
-		var n: Vector2i = c + dir_vector
-		if game.island.buildings.get(n) is Rail and _in_any_station(n) \
-				and (RailNetwork.route(game.island, n).get("path", []) as Array).size() >= GameState.rules.min_train_route:
-			return true
-	return false
+## A halt is worth most at the start of a long route through many mine areas
+## (and nothing where trains could not start or a halt already serves the line).
+func _score_halt(c: Vector2i) -> float:
+	if game.train_problem(c) != "":
+		return -5.0
+	for cell: Vector2i in RailNetwork.line_cells(game.island, c):
+		var rail := game.island.buildings.get(cell) as Rail
+		if rail and rail.has_halt:
+			return -3.0
+	var route := RailNetwork.route(game.island, c)
+	return 4.0 + _ore_cells(route["path"], (route["factory"] as Factory).ore) * 1.5
 
 
-func _in_any_station(c: Vector2i) -> bool:
-	for station in game.island.stations():
-		if station.covers(c):
-			return true
-	return false
-
-
-## At every marketplace with trades left, swap the most plentiful item for the scarcest offer.
-func _trade() -> void:
+## Actions saved for a train while a line has ore waiting (cards must not use them up).
+func _actions_kept_back() -> int:
 	for building: Building in game.island.all_buildings():
-		var market := building as Marketplace
-		if market == null or market.is_used_up():
-			continue
-		var most := GameData.ITEMS[0]
-		for item in GameData.ITEMS:
-			if GameState.item_count(item) > GameState.item_count(most):
-				most = item
-		var best := -1
-		for i in market.offers.size():
-			if market.can_trade(i, most) and (best < 0 \
-					or GameState.item_count(market.offers[i]) < GameState.item_count(market.offers[best])):
-				best = i
-		if best >= 0 and GameState.item_count(market.offers[best]) + 1 < GameState.item_count(most):
-			_log("  traded %s -> %s" % [most, market.offers[best]])
-			market.trade(best, most)
+		if building is Rail and game.train_problem(building.cell) == "":
+			var route := RailNetwork.route(game.island, building.cell)
+			if _stock_on(route["path"], (route["factory"] as Factory).ore) >= 3:
+				return 1
+	return 0
 
 
 # --- 3. Actions ---
@@ -380,7 +354,7 @@ func _spend_actions() -> void:
 
 func _do_one_action() -> bool:
 	var island := game.island
-	# Best start cell per factory: in station range, longest stretch of matching mines.
+	# Best start cell: the one whose route passes the most ore a train may take.
 	var best_start := Vector2i.ZERO
 	var best_value := 0
 	var best_factory: Factory = null
@@ -409,32 +383,40 @@ func _do_one_action() -> bool:
 		if mine and not mine.is_full() and _mine_serves_line(mine):
 			game.tap_cell(mine.cell)
 			return true
-	for building: Building in island.all_buildings():
-		var crafter := building as ItemCrafter
-		if crafter and crafter.is_ready_to_collect():
-			game.tap_cell(crafter.cell)
-			return true
 	if stock >= 1:
 		_promised += 4
 		return game.send_train(best_start)
 	return false
 
 
-## Ore lying in mines along `path` that trains to a factory of `ore` would pick up.
+## Rail cells of `path` inside the area of a mine of `ore`.
+func _ore_cells(path: Array, ore: String) -> int:
+	var count := 0
+	for building: Building in game.island.all_buildings():
+		var mine := building as Mine
+		if mine and mine.ore == ore:
+			for c: Vector2i in path:
+				if mine.covers(c):
+					count += 1
+	return count
+
+
+## Ore a train on `path` to a factory of `ore` could take (one per rail cell in a mine's area).
 func _stock_on(path: Array, ore: String) -> int:
 	var total := 0
 	for building: Building in game.island.all_buildings():
 		var mine := building as Mine
 		if mine == null or mine.ore != ore:
 			continue
+		var cells := 0
 		for c: Vector2i in path:
 			if mine.covers(c):
-				total += mine.stock
-				break
+				cells += 1
+		total += mini(mine.stock, cells * GameState.rules.loads_per_mine_step)
 	return total
 
 
-## True if a train sent from a station could pass this mine on its way to a matching factory.
+## True if a train could pass this mine on its way to a matching factory.
 func _mine_serves_line(mine: Mine) -> bool:
 	for offset in mine.area_offsets():
 		var c := mine.cell + offset
@@ -476,7 +458,7 @@ func _on_building_placed(_building: Building) -> void:
 func _automation_count() -> int:
 	var count := 0
 	for building: Building in game.island.all_buildings():
-		if building.automated or building is Halt:
+		if building.automated or (building is Rail and (building as Rail).has_halt):
 			count += 1
 	return count
 
@@ -485,8 +467,8 @@ func _log_round(round_number: int) -> void:
 	var orders: Array[String] = []
 	for factory in game.island.factories:
 		orders.append("%s %d/%d(%dR)" % [factory.ore, factory.delivered, factory.order_amount, factory.rounds_left])
-	print("round %d: coins=%d items=%s done=%d missed=%d sent=%d rp=%d research=%s auto=%d land=%d orders=%s" % [
-		round_number, GameState.coins, GameState.items, GameState.stats["orders_done"],
+	print("round %d: coins=%d hand=%s done=%d missed=%d sent=%d rp=%d research=%s auto=%d land=%d orders=%s" % [
+		round_number, GameState.coins, GameState.hand, GameState.stats["orders_done"],
 		GameState.stats["orders_missed"], GameState.stats["trains_sent"], GameState.research_points,
 		GameState.researched, _automation_count(), game.island.land.size(), " ".join(orders)])
 

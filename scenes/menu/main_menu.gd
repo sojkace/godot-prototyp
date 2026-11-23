@@ -4,7 +4,7 @@ extends Control
 ## `--rules=<variant>` is read by GameState.
 
 const GAME_SCENE := "res://scenes/main.tscn"
-const SKIP_MENU_ARGS: Array[String] = ["--autoplay", "--demo-build", "--demo-market"]
+const SKIP_MENU_ARGS: Array[String] = ["--autoplay", "--demo-build"]
 
 @onready var _level_buttons: VBoxContainer = %LevelButtons
 @onready var _quit_button: Button = %QuitButton

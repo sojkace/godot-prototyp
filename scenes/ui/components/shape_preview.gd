@@ -9,12 +9,9 @@ const COLORS := {
 	"water": Color(0.25, 0.55, 0.9),
 	"mine_gold": Color(0.95, 0.78, 0.2),
 	"mine_silver": Color(0.8, 0.82, 0.86),
-	"itemcrafter": Color(0.9, 0.5, 0.25),
 	"observer": Color(0.65, 0.45, 0.85),
-	"marketplace": Color(0.35, 0.75, 0.4),
 	"flag_normal": Color(0.9, 0.3, 0.3),
 	"flag_pointy": Color(0.9, 0.3, 0.3),
-	"station": Color(0.3, 0.35, 0.45),
 	"halt": Color(0.5, 0.4, 0.7),
 }
 const UPGRADE_COLOR := Color(1.0, 0.8, 0.2)

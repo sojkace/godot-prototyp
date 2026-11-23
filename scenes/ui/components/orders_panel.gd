@@ -1,7 +1,7 @@
 class_name OrdersPanel
 extends PanelContainer
-## Left side list: every factory's order (ore, delivered / wanted, rounds left), the
-## stations' free trains and a short how-to.
+## Left side list: every factory's order (ore, delivered / wanted, rounds left) and a
+## short how-to.
 
 var _column: VBoxContainer
 
@@ -44,16 +44,14 @@ func refresh() -> void:
 				text.modulate = Color(1, 0.55, 0.45)
 			row.add_child(text)
 			_column.add_child(row)
-		_column.add_child(_title("Bahnhöfe"))
-		for station in island.stations():
-			_column.add_child(_line("Züge frei: %d/%d" % [station.trains_left, GameState.rules.trains_per_station]))
 	_column.add_child(_title("So geht's"))
-	for hint in ["Mine antippen: +%d Erz (1 Aktion)" % GameState.rules.mine_tap_amount,
-			"Werkstatt antippen: Items holen (1 Aktion)",
-			"Schiene antippen: Zug losschicken (1 Aktion)",
-			"Bahnhof antippen: Reichweite zeigen",
-			"Züge laden an Minen entlang der Strecke",
-			"Karten kosten Items, Aufträge geben Münzen"]:
+	for hint in ["Jede Aktion kostet 1 von %d pro Runde:" % GameState.max_actions(),
+			"  Karte legen",
+			"  Mine antippen: +%d Erz" % GameState.rules.mine_tap_amount,
+			"  Schiene antippen: Zug losschicken",
+			"Der Zug lädt 1 Erz pro Schiene im Minenbereich",
+			"Nicht gelegte Karten bleiben auf der Hand",
+			"Aufträge geben Münzen"]:
 		var label := _line(hint)
 		label.add_theme_font_size_override("font_size", 14)
 		label.modulate = Color(0.85, 0.88, 0.95)

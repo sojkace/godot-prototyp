@@ -4,8 +4,8 @@ class_name PlacementRules
 ##   rails:  may start anywhere; both ends of the block must face free ground, a factory or
 ##           a rail opening towards it (so every line can go on or is finished)
 ##   other pieces: (GameRules.require_adjacent) at least one cell must touch a building
-##   upgrade: on a building that can be automated and is not yet
-##   bomb:   on any building except ground, stations and factories
+##   upgrade: on a building that takes this upgrade (auto: mines, halt: rails)
+##   bomb:   on any building except ground and factories
 ##   bridge: on a sea cell next to land, or on water standing on land
 
 
@@ -16,7 +16,7 @@ static func is_valid(island: Island, layout: Array[Dictionary], rail: bool) -> b
 		return can_use_tool(island, layout[0]["tool"], layout[0]["cell"])
 	if layout[0].has("upgrade"):
 		var target := island.buildings.get(layout[0]["cell"]) as Building
-		return target != null and target.can_automate() and not target.automated
+		return target != null and target.can_upgrade(layout[0]["upgrade"])
 	var cells := {}
 	for entry in layout:
 		var c: Vector2i = entry["cell"]
@@ -53,7 +53,7 @@ static func can_use_tool(island: Island, tool: String, c: Vector2i) -> bool:
 	match tool:
 		"bomb":
 			return building != null and not building.is_buildable_ground \
-				and not building is Station and not building is Factory
+				and not building is Factory
 		"bridge":
 			if island.is_land(c):
 				return building != null and building.type_id() == "water"

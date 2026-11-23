@@ -1,14 +1,13 @@
 extends Node
-## Global state of the current run: active rules, coins, items, actions, round, the card
-## deck (draw pile, hand, reserve, discard pile), collection, research and milestones.
+## Global state of the current run: active rules, coins, actions, round, the card deck
+## (draw pile, hand, discard pile), collection, research and milestones.
 ## Every number comes from `rules` (a GameRules resource), so rule variants can be swapped
 ## without touching code.
 
 signal coins_changed(value: int)
 signal round_changed(round_number: int)
 signal actions_changed(value: int)
-signal items_changed
-## Hand, reserve, deck composition or piles changed.
+## Hand, deck composition or piles changed.
 signal cards_changed
 ## Research points, finished research or collection changed.
 signal research_changed
@@ -38,13 +37,9 @@ var actions := 0:
 		actions = maxi(value, 0)
 		actions_changed.emit(actions)
 
-## item id -> count
-var items := {}
-
 ## The deck: always rules.deck_size card ids, spread over these places.
 var draw_pile: Array[String] = []
 var hand: Array[String] = []
-var reserve: Array[String] = []
 var discard_pile: Array[String] = []
 
 ## Card ids that may be swapped into the deck.
@@ -57,7 +52,6 @@ var researched: Array[String] = []
 ## cards_played, land, factories, manual_actions, curses.
 var stats := {}
 var _milestones_done: Array[int] = []
-var _item_pile: Array[String] = []
 
 
 func _ready() -> void:
@@ -95,8 +89,6 @@ func load_rules(id: String) -> void:
 func reset() -> void:
 	coins = rules.start_coins
 	round_index = 0
-	items = rules.start_items.duplicate()
-	_item_pile = _shuffled(rules.item_deck)
 	collection = rules.start_collection.duplicate()
 	research_points = 0
 	researched.clear()
@@ -105,12 +97,10 @@ func reset() -> void:
 	_milestones_done.clear()
 	draw_pile = _shuffled(rules.start_deck)
 	hand.clear()
-	reserve.clear()
 	discard_pile.clear()
 	if draw_pile.size() != rules.deck_size:
 		push_warning("start_deck has %d cards, deck_size is %d" % [draw_pile.size(), rules.deck_size])
 	actions = max_actions()
-	items_changed.emit()
 	cards_changed.emit()
 	research_changed.emit()
 
@@ -125,7 +115,7 @@ func max_actions() -> int:
 	return result
 
 
-## Spends one action for manual work. False if none is left.
+## Spends one action (play a card, tap a mine, send a train). False if none is left.
 func spend_action() -> bool:
 	if actions <= 0:
 		return false
@@ -134,12 +124,10 @@ func spend_action() -> bool:
 	return true
 
 
-## Next round: actions refill, the hand (not the reserve) is discarded, new cards drawn.
+## Next round: actions refill and the hand is filled up again (unplayed cards stay).
 func next_round() -> void:
 	round_index += 1
 	actions = max_actions()
-	discard_pile.append_array(hand)
-	hand.clear()
 	draw_hand()
 
 
@@ -192,112 +180,38 @@ func do_research(entry: Dictionary) -> void:
 		return
 	research_points -= int(entry["cost"])
 	researched.append(entry["id"])
-	for card_id in entry.get("unlocks", []):
+	for card_id: String in entry.get("unlocks", []):
 		if not collection.has(card_id):
 			collection.append(card_id)
+		# One free copy goes straight into the deck, replacing the most common normal card.
+		var out := _most_common_card()
+		if out != "":
+			_replace_one(out, card_id)
+			Events.message.emit("%s ist jetzt im Deck (statt %s)" % [CardShape.card_name(card_id), CardShape.card_name(out)])
+	if not entry.get("unlocks", []).is_empty():
+		cards_changed.emit()
 	if entry.has("actions"):
 		actions += int(entry["actions"])
 	research_changed.emit()
 
 
-# --- Items ---
-
-func item_count(item: String) -> int:
-	return items.get(item, 0)
-
-
-func add_items(list: Array[String]) -> void:
-	for item in list:
-		items[item] = item_count(item) + 1
-	items_changed.emit()
-
-
-## Takes cards from the item deck (refilled when empty) without adding them anywhere.
-func draw_item_cards(count: int) -> Array[String]:
-	var drawn: Array[String] = []
-	for i in count:
-		if _item_pile.is_empty():
-			_item_pile = _shuffled(rules.item_deck)
-		drawn.append(_item_pile.pop_back())
-	return drawn
-
-
-## Draws `count` item cards straight into the inventory. Returns what was drawn.
-func deliver_items(count: int) -> Array[String]:
-	var drawn := draw_item_cards(count)
-	add_items(drawn)
-	return drawn
-
-
-## Puts item cards back into the item deck (e.g. old marketplace offers).
-func return_item_cards(cards: Array[String]) -> void:
-	_item_pile.append_array(cards)
-	_item_pile.shuffle()
-
-
-## Swaps one inventory item for another (marketplace).
-func trade_item(give: String, get_item: String) -> void:
-	items[give] = item_count(give) - 1
-	items[get_item] = item_count(get_item) + 1
-	items_changed.emit()
-
-
 # --- Cards ---
 
-func card_cost(card_id: String) -> Dictionary:
-	return CardShape.definition(card_id).get("cost", {})
-
-
-func can_pay(card_id: String) -> bool:
-	var cost := card_cost(card_id)
-	for item in cost:
-		if item_count(item) < int(cost[item]):
-			return false
-	return true
-
-
-## Cards the player can play right now: the hand, then the reserve.
-## A "slot" is an index into playable_cards().
-func playable_cards() -> Array[String]:
-	var result: Array[String] = hand.duplicate()
-	result.append_array(reserve)
-	return result
-
-
+## A "slot" is an index into the hand.
 func card_in_slot(slot: int) -> String:
-	var cards := playable_cards()
-	return cards[slot] if slot >= 0 and slot < cards.size() else ""
+	return hand[slot] if slot >= 0 and slot < hand.size() else ""
 
 
-func is_reserved_slot(slot: int) -> bool:
-	return slot >= hand.size()
-
-
-## Pays the card's cost and moves it to the discard pile.
+## Moves the card to the discard pile (its empty slot is refilled next round).
+## The action it costs is spent by Main.
 func play_slot(slot: int) -> void:
 	var card_id := card_in_slot(slot)
 	if card_id == "":
 		return
-	var cost := card_cost(card_id)
-	for item in cost:
-		items[item] = item_count(item) - int(cost[item])
-	_take_slot(slot)
+	hand.remove_at(slot)
 	discard_pile.append(card_id)
 	add_stat("cards_played")
-	items_changed.emit()
 	cards_changed.emit()
-
-
-func can_reserve(slot: int) -> bool:
-	return not is_reserved_slot(slot) and card_in_slot(slot) != "" and reserve.size() < rules.reserve_slots
-
-
-## Moves a hand card to the reserve (kept when the round ends).
-func reserve_slot(slot: int) -> void:
-	if can_reserve(slot):
-		reserve.append(hand[slot])
-		hand.remove_at(slot)
-		cards_changed.emit()
 
 
 func can_discard(slot: int) -> bool:
@@ -310,15 +224,8 @@ func discard_slot(slot: int) -> void:
 		return
 	coins -= rules.discard_cost
 	discard_pile.append(card_in_slot(slot))
-	_take_slot(slot)
+	hand.remove_at(slot)
 	draw_hand()
-
-
-func _take_slot(slot: int) -> void:
-	if is_reserved_slot(slot):
-		reserve.remove_at(slot - hand.size())
-	else:
-		hand.remove_at(slot)
 
 
 # --- Deck building ---
@@ -327,7 +234,6 @@ func _take_slot(slot: int) -> void:
 func deck_cards() -> Array[String]:
 	var result: Array[String] = draw_pile.duplicate()
 	result.append_array(hand)
-	result.append_array(reserve)
 	result.append_array(discard_pile)
 	return result
 
@@ -362,6 +268,16 @@ func swap_card(out_card: String, in_card: String) -> void:
 	cards_changed.emit()
 
 
+## The normal card with the most copies in the deck ("" if there is none).
+func _most_common_card() -> String:
+	var best := ""
+	var counts := deck_counts()
+	for card_id: String in counts:
+		if not is_curse(card_id) and (best == "" or int(counts[card_id]) > int(counts[best])):
+			best = card_id
+	return best
+
+
 ## An expired order: a random normal card of the deck turns into a curse card.
 func add_curse() -> void:
 	var candidates: Array[String] = []
@@ -377,7 +293,7 @@ func add_curse() -> void:
 
 ## Replaces a copy in the draw pile first (so the change shows up soon), then elsewhere.
 func _replace_one(out_card: String, in_card: String) -> void:
-	for pile: Array[String] in [draw_pile, discard_pile, hand, reserve]:
+	for pile: Array[String] in [draw_pile, discard_pile, hand]:
 		var index := pile.find(out_card)
 		if index >= 0:
 			pile[index] = in_card

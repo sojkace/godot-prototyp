@@ -9,7 +9,7 @@ class_name CardShape
 ## rotates the whole block (4 headings) or starts it from its other end (rail_variants),
 ## single pieces never change. Lines may start anywhere; a block connects to a line when
 ## its openings meet an open end.
-## Upgrade cards ({"upgrade": "auto", "targets": [...]}) act on one existing building.
+## Upgrade cards ({"upgrade": "auto" | "halt", "targets": [...]}) act on one existing building.
 ## Tool cards ({"tool": "bomb" | "bridge", "coins": cost}) are bought with coins and act on
 ## one cell; see PlacementRules for where they work.
 

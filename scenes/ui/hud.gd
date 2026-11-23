@@ -1,16 +1,15 @@
 class_name Hud
 extends CanvasLayer
 ## Landscape screen layout (built in code) and coordinator of the UI components:
-##   top bar (coins, items, actions, research points, round, Deck / Forschung / pause),
+##   top bar (coins, actions, research points, round, Deck / Forschung / pause),
 ##   OrdersPanel (left), HandBar + ShopBar + "Runde beenden" (bottom), placement row,
-##   toast, MarketPanel, DeckPanel, ResearchPanel, PauseMenu.
+##   toast, DeckPanel, ResearchPanel, PauseMenu.
 ## The HUD never changes game state itself; it only emits signals that main.gd handles.
 
 signal end_round_pressed
 signal restart_pressed
 signal menu_pressed
 signal card_pressed(slot: int)
-signal reserve_pressed(slot: int)
 signal discard_pressed(slot: int)
 signal tool_pressed(card_id: String)
 signal rotate_pressed
@@ -35,12 +34,9 @@ var _rotate_button: Button
 var _confirm_button: Button
 var _orders: OrdersPanel
 var _toast: Label
-var _market_panel: MarketPanel
 var _deck_panel: DeckPanel
 var _research_panel: ResearchPanel
 var _pause_menu: PauseMenu
-## Items delivered this frame, collected so several sources give one toast.
-var _pending_delivery: Array[String] = []
 
 
 func _ready() -> void:
@@ -66,10 +62,6 @@ func _ready() -> void:
 	_toast.modulate.a = 0.0
 	root.add_child(_toast)
 
-	_market_panel = MarketPanel.new()
-	add_child(_market_panel)
-	_market_panel.closed.connect(_on_dialog_closed)
-	_market_panel.traded.connect(show_toast)
 	_deck_panel = DeckPanel.new()
 	add_child(_deck_panel)
 	_deck_panel.swap_requested.connect(swap_pressed.emit)
@@ -89,7 +81,6 @@ func _ready() -> void:
 	GameState.research_changed.connect(_refresh)
 	GameState.milestone_reached.connect(func(m: Dictionary) -> void:
 		show_toast("Meilenstein: %s\n+%d Forschungspunkte" % [m["name"], int(m["points"])]))
-	Events.items_delivered.connect(_on_items_delivered)
 	Events.message.connect(show_toast)
 	Events.order_done.connect(func(f: Factory) -> void:
 		show_toast("Auftrag erfüllt: %s" % GameData.item_name(f.ore)))
@@ -115,8 +106,6 @@ func _build_top_bar(root: Control) -> void:
 	margin.add_child(row)
 	_coins_label = UiKit.label(22)
 	row.add_child(_coins_label)
-	var inventory := InventoryBar.new()
-	row.add_child(inventory)
 	_actions_label = UiKit.label(22)
 	row.add_child(_actions_label)
 	_round_label = UiKit.label(22)
@@ -150,7 +139,6 @@ func _build_bottom(root: Control) -> void:
 	_hand_bar = HandBar.new()
 	_hand_bar.size_flags_vertical = Control.SIZE_SHRINK_END
 	_hand_bar.card_pressed.connect(card_pressed.emit)
-	_hand_bar.reserve_pressed.connect(reserve_pressed.emit)
 	_hand_bar.discard_pressed.connect(discard_pressed.emit)
 	row.add_child(_hand_bar)
 
@@ -200,11 +188,6 @@ func show_toast(text: String) -> void:
 	_toast_tween.tween_property(_toast, "modulate:a", 0.0, 0.6)
 
 
-func open_market(market: Marketplace) -> void:
-	_bottom.hide()
-	_market_panel.open(market)
-
-
 ## "deck" or "research".
 func open_panel(panel_name: String) -> void:
 	if _running:
@@ -219,25 +202,8 @@ func open_panel(panel_name: String) -> void:
 
 
 func _on_dialog_closed() -> void:
-	if not _market_panel.visible and not _deck_panel.visible and not _research_panel.visible:
+	if not _deck_panel.visible and not _research_panel.visible:
 		_bottom.show()
-
-
-func _on_items_delivered(items: Array[String], _source: Building) -> void:
-	if _pending_delivery.is_empty():
-		_flush_delivery.call_deferred()
-	_pending_delivery.append_array(items)
-
-
-func _flush_delivery() -> void:
-	var counts := {}
-	for item in _pending_delivery:
-		counts[item] = counts.get(item, 0) + 1
-	_pending_delivery.clear()
-	var names: Array[String] = []
-	for item in counts:
-		names.append("+%d %s" % [counts[item], GameData.item_name(item)])
-	show_toast("Erhalten: " + ", ".join(names))
 
 
 func _refresh() -> void:

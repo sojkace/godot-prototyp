@@ -1,8 +1,8 @@
 class_name Train
 extends Node3D
-## A wagon sent from a station: it drives its `route` (rail cells) to `factory`, takes ore
-## of the factory's kind from mines it passes and delivers it there. Then it is gone
-## (back at its station for the next round).
+## A wagon put on a rail: it drives its `route` (rail cells) to `factory`, takes ore of the
+## factory's kind from mines it passes (one per rail cell inside a mine's area) and delivers
+## it there. Then it is gone.
 
 @export var capacity := 4
 

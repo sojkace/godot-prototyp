@@ -11,12 +11,12 @@ const DIRT_ID := "dirt"
 ## at a random distance each time (radius / angle limits come from GameRules).
 const ISLAND_CENTER := Vector2(0.5, 0.5)
 
-const STATION_CELL := Vector2i(0, 0)
-## Other start buildings: cell -> building id
+## Middle of the start setup; factories appear at a distance from it.
+const START_CELL := Vector2i(0, 0)
+## Start buildings: cell -> building id
 const START_BUILDINGS := {
 	Vector2i(1, 1): "mine_gold",
-	Vector2i(-1, 0): "itemcrafter",
-	Vector2i(0, -1): "marketplace",
+	Vector2i(-1, -1): "mine_silver",
 }
 
 ## Grid cell -> Building
@@ -67,22 +67,6 @@ func count_type(id: String) -> int:
 	return count
 
 
-func stations() -> Array[Station]:
-	var result: Array[Station] = []
-	for building: Building in buildings.values():
-		if building is Station:
-			result.append(building)
-	return result
-
-
-## A station that may put a train on `c` right now (area covers it, trains left), or null.
-func station_for(c: Vector2i) -> Station:
-	for station in stations():
-		if station.can_send() and (station.covers(c) or station.cell == c):
-			return station
-	return null
-
-
 # --- Changes ---
 
 ## Builds `id` on the cell (replacing the ground) and runs its on_placed() hook.
@@ -99,12 +83,12 @@ func place_building(id: String, c: Vector2i, steps: int) -> Building:
 
 
 ## Builds every cell of a card layout (see CardShape) in order. Tool entries demolish
-## (bomb) or add ground (bridge); upgrade entries automate the building there.
+## (bomb) or add ground (bridge); upgrade entries upgrade the building there.
 func place_layout(layout: Array[Dictionary]) -> void:
 	for entry in layout:
 		var c: Vector2i = entry["cell"]
 		if entry.has("upgrade"):
-			(buildings[c] as Building).set_automated()
+			(buildings[c] as Building).apply_upgrade(entry["upgrade"])
 			continue
 		match entry.get("tool", ""):
 			"bomb":
@@ -159,16 +143,29 @@ func claim_land(center: Vector2i, offsets: Array[Vector2i]) -> void:
 	_land_changed()
 
 
-## Every GameRules.land_per_factory new land cells a new factory appears.
 func _land_changed() -> void:
 	GameState.set_stat("land", land.size())
-	var due := 1 + floori(float(land.size() - _start_land) / maxi(1, GameState.rules.land_per_factory))
+	_spawn_due_factories()
+
+
+## Called by Main after every round: time brings factories too.
+func round_passed() -> void:
+	_spawn_due_factories()
+
+
+## A new factory every GameRules.land_per_factory new land cells, and at the latest every
+## GameRules.rounds_per_factory rounds (the larger count wins).
+func _spawn_due_factories() -> void:
+	var rules := GameState.rules
+	var due := 1 + floori(float(land.size() - _start_land) / maxi(1, rules.land_per_factory))
+	if rules.rounds_per_factory > 0:
+		due = maxi(due, 1 + floori(float(GameState.round_index) / rules.rounds_per_factory))
 	while factories.size() < due:
 		if spawn_factory() == null:
 			break
 
 
-## Puts the next factory of GameRules.factory_sequence on a free spot away from the station.
+## Puts the next factory of GameRules.factory_sequence on a free spot away from the start.
 func spawn_factory() -> Factory:
 	var rules := GameState.rules
 	var c: Variant = _factory_spot()
@@ -189,7 +186,7 @@ func spawn_factory() -> Factory:
 	return factory
 
 
-## Free ground in the right distance from the station with free ground around it
+## Free ground in the right distance from the start with free ground around it
 ## (relaxed step by step if the island has no such spot).
 func _factory_spot() -> Variant:
 	var rules := GameState.rules
@@ -198,7 +195,7 @@ func _factory_spot() -> Variant:
 		for c: Vector2i in land:
 			if not is_free_ground(c):
 				continue
-			var distance := absi(c.x - STATION_CELL.x) + absi(c.y - STATION_CELL.y)
+			var distance := absi(c.x - START_CELL.x) + absi(c.y - START_CELL.y)
 			if strict and (distance < rules.factory_min_distance or distance > rules.factory_max_distance):
 				continue
 			if not strict and distance < 3:
@@ -251,11 +248,10 @@ func _generate_land() -> void:
 	# The start setup (and the cells around it) always needs land.
 	for x in range(-2, 3):
 		for y in range(-2, 3):
-			land[STATION_CELL + Vector2i(x, y)] = true
+			land[START_CELL + Vector2i(x, y)] = true
 
 
 func _build_start_island() -> void:
-	_place("station", STATION_CELL)
 	for c: Vector2i in START_BUILDINGS:
 		_place(START_BUILDINGS[c], c)
 	for c: Vector2i in land:
