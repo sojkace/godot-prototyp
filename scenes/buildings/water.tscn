@@ -1,0 +1,10 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/buildings/building.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/models/buildings/water.glb" id="2_model"]
+
+[node name="Water" type="Node3D"]
+script = ExtResource("1_script")
+counts_as_neighbor = false
+
+[node name="Model" parent="." instance=ExtResource("2_model")]

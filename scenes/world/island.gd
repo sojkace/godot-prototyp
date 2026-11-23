@@ -99,6 +99,49 @@ func place_building(id: String, c: Vector2i, steps: int) -> Building:
 	return building
 
 
+## Builds every cell of a card layout (see CardShape) in order. Tool entries demolish
+## (bomb) or add ground (bridge) instead.
+func place_layout(layout: Array[Dictionary]) -> void:
+	for entry in layout:
+		var c: Vector2i = entry["cell"]
+		match entry.get("tool", ""):
+			"bomb":
+				demolish(c)
+			"bridge":
+				land[c] = true
+				place_building("bridge", c, 0)
+			_:
+				place_building(entry["id"], c, entry["steps"])
+
+
+## Blows up whatever stands on the cell and leaves plain dirt (rails shorten the line).
+func demolish(c: Vector2i) -> void:
+	var old := buildings.get(c) as Building
+	if old is Rail and not rail_path.is_empty() and rail_path[-1] == c:
+		rail_path.pop_back()
+	place_building(DIRT_ID, c, 0)
+	_explosion(GridUtil.cell_to_world(c))
+
+
+func _explosion(at: Vector3) -> void:
+	var flash := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.4
+	sphere.height = 0.8
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(1.0, 0.6, 0.15, 0.9)
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	sphere.material = material
+	flash.mesh = sphere
+	flash.position = at + Vector3.UP * 0.4
+	add_child(flash)
+	var tween := flash.create_tween().set_parallel()
+	tween.tween_property(flash, "scale", Vector3.ONE * 2.5, 0.35)
+	tween.tween_property(material, "albedo_color:a", 0.0, 0.35)
+	tween.chain().tween_callback(flash.queue_free)
+
+
 ## Turns water cells around `center` into new ground, rising out of the sea.
 func claim_land(center: Vector2i, offsets: Array[Vector2i]) -> void:
 	var delay := 0.0

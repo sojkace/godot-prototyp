@@ -13,5 +13,7 @@ signal train_step(trains: Array[Train])
 signal train_arrived(train: Train, was_full: bool)
 ## The player built something (not fired for the start setup).
 signal building_placed(building: Building)
+## The player tapped a marketplace; the HUD opens its trade window.
+signal market_requested(market: Marketplace)
 ## Items were added to the inventory by a building (e.g. a workshop).
 signal items_delivered(items: Array[String], source: Building)

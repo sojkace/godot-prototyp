@@ -1,7 +1,7 @@
 class_name Hud
 extends CanvasLayer
 ## Screen layout and coordinator of the UI components:
-##   top bar (coins, hearts, round, pause button), InventoryBar, CardBar, placement row,
+##   top bar (coins, hearts, round, pause button), InventoryBar, CardBar, ShopBar, placement row,
 ##   start button, toast, MarketPanel, PauseMenu and game-over panel.
 ## The HUD never changes game state itself; it only emits signals that main.gd handles.
 
@@ -9,6 +9,7 @@ signal start_pressed
 signal restart_pressed
 signal card_pressed(deck_id: String)
 signal discard_pressed(deck_id: String)
+signal tool_pressed(card_id: String)
 signal rotate_pressed
 signal confirm_pressed
 signal cancel_pressed
@@ -30,6 +31,7 @@ signal menu_pressed
 var _running := false
 var _placing := false
 var _toast_tween: Tween
+var _shop_bar: ShopBar
 var _market_panel: MarketPanel
 var _pause_menu: PauseMenu
 ## Items delivered this frame, collected so several workshops give one toast.
@@ -53,6 +55,9 @@ func _ready() -> void:
 	_round_label.get_parent().add_child(pause_button)
 	%RestartButton.get_parent().add_child(UiKit.button("Hauptmenü", menu_pressed.emit))
 
+	_shop_bar = ShopBar.new()
+	_card_bar.add_sibling(_shop_bar)
+	_shop_bar.tool_pressed.connect(tool_pressed.emit)
 	_card_bar.card_pressed.connect(card_pressed.emit)
 	_card_bar.discard_pressed.connect(discard_pressed.emit)
 	_start_button.pressed.connect(start_pressed.emit)
@@ -74,6 +79,7 @@ func _ready() -> void:
 func set_running(running: bool) -> void:
 	_running = running
 	_card_bar.locked = running
+	_shop_bar.locked = running
 	_refresh()
 
 
@@ -124,7 +130,7 @@ func _flush_delivery() -> void:
 	for item in _pending_delivery:
 		names.append("+1 " + GameData.item_name(item))
 	_pending_delivery.clear()
-	show_toast("Werkstatt liefert:\n" + ", ".join(names))
+	show_toast("Abgeholt:\n" + ", ".join(names))
 
 
 func _refresh() -> void:
@@ -134,6 +140,7 @@ func _refresh() -> void:
 		GameState.round_index + 1, GameState.round_count(), GameState.trains_this_round().length()]
 	_place_row.visible = _placing
 	_card_bar.visible = not _placing
+	_shop_bar.visible = not _placing
 	_start_button.visible = not _placing
 	_start_button.disabled = _running
 	_start_button.text = "Zug fährt …" if _running else "Zug starten"
