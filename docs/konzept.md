@@ -119,6 +119,13 @@ Auf diesem Branch spielbar (Menü → „Neues Spiel“, Querformat):
   neue Minen/Flaggen, +1 Aktion.
 - Noch **nicht** drin: Speichern, echte Modelle für Fabrik/Haltepunkt (Platzhalter).
 
+### TODO
+- **Weichen:** Eine Schiene, an der sich eine Strecke teilt oder zwei Strecken zusammenlaufen.
+  Damit könnte eine Linie mehrere Fabriken bedienen oder zwei Minen-Äste zusammenführen.
+  Offen: Welche Richtung nimmt der Zug (fest, umschaltbar per Antippen, oder automatisch zur
+  Fabrik mit dem größten Bedarf)? Eigene Karte, Forschung oder Upgrade auf eine Schiene?
+  Technisch: `Rail` hat bisher genau zwei Öffnungen, `RailNetwork.route` sucht den kürzesten Weg.
+
 Bot-Werte Standard (40 Runden, 6 Spiele; wachsende Aufträge, Fabrik spätestens alle 8 Runden,
 3 Münzen pro Auftrag, erforschte Karten kommen einmal direkt ins Deck): Ø 11 Aufträge erfüllt,
 16 verpasst, 6 Fabriken, erste Automatisierung in allen Spielen ab Runde ≈ 16.
