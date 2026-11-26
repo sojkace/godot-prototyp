@@ -14,8 +14,10 @@ signal train_arrived(train: Train, factory: Factory)
 ## A factory's order was finished / ran out.
 signal order_done(factory: Factory)
 signal order_expired(factory: Factory)
-## A new factory appeared on the island.
+## A new factory appeared on the island (announced; it opens later, see Factory.opens_in).
 signal factory_appeared(factory: Factory)
+## An announced factory opened and has its first order.
+signal factory_opened(factory: Factory)
 ## The player built something (not fired for the start setup).
 signal building_placed(building: Building)
 ## Short message for the player (e.g. why an action did not work).

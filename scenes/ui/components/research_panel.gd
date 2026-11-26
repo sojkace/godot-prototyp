@@ -1,7 +1,7 @@
 class_name ResearchPanel
 extends PanelContainer
 ## Research window: milestones give research points; research unlocks cards for the
-## collection (then swap them into the deck) or extra actions.
+## collection (they come first in the next card choice) or extra actions.
 
 signal research_requested(index: int)
 

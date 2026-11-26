@@ -22,7 +22,7 @@ static func neighbours(island: Island, c: Vector2i) -> Array[Vector2i]:
 	return result
 
 
-## Factories the rail at `c` opens into.
+## Open factories the rail at `c` leads into (announced ones do not take trains yet).
 static func factories_at(island: Island, c: Vector2i) -> Array[Factory]:
 	var result: Array[Factory] = []
 	var rail := rail_at(island, c)
@@ -30,7 +30,7 @@ static func factories_at(island: Island, c: Vector2i) -> Array[Factory]:
 		return result
 	for d in rail.openings():
 		var factory := island.buildings.get(c + GridUtil.DIR_VECTORS[d]) as Factory
-		if factory:
+		if factory and factory.is_open():
 			result.append(factory)
 	return result
 

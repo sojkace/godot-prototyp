@@ -7,7 +7,7 @@ extends Node
 ##   `-- --bot-speed=N`   time scale (default 20 / 60), e.g. 1 to record a video.
 ## Combine with `--rules=<variant>` and `--seed=N` to compare rule variants.
 ## Strategy per round:
-##   1. research whatever is affordable, swap new cards into the deck (curses out first)
+##   1. research whatever is affordable; card choices: wanted cards in, curses out first
 ##   2. play hand cards at their best-scored spot (rails towards factories, mines next to
 ##      lines of the matching factory, flags for land, upgrades on mines); every card costs
 ##      an action, one is kept back when a line has ore waiting for a train
@@ -62,7 +62,7 @@ func _play_turn() -> void:
 	if GameState.round_index >= _rounds_per_game:
 		_finish()
 		return
-	_research_and_swap()
+	_research_and_rewards()
 	_play_cards()
 	_spend_actions()
 	game.end_round()
@@ -75,7 +75,7 @@ const RESEARCH_ORDER: Array[String] = ["conveyor", "halt", "land", "organisation
 const MIN_START_DISTANCE := 5
 
 
-func _research_and_swap() -> void:
+func _research_and_rewards() -> void:
 	var research := GameState.rules.research
 	for id in RESEARCH_ORDER:
 		for i in research.size():
@@ -87,25 +87,37 @@ func _research_and_swap() -> void:
 			game.research(i)
 		if not GameState.researched.has(id):
 			break
-	# Curses out, then the newest useful cards in for the weakest normal ones.
-	var counts := GameState.deck_counts()
-	for card_id: String in counts.keys():
-		if GameState.is_curse(card_id):
-			for i in int(counts[card_id]):
-				if GameState.coins >= GameState.swap_price(card_id):
-					game.swap_card(card_id, "rail_f")
-					_log("  swapped out curse")
-	var wanted := {"auto_mine": 3, "halt": 2, "mine_silver_twin": 2}
-	for card_id: String in wanted:
-		if not GameState.collection.has(card_id):
-			continue
-		while int(GameState.deck_counts().get(card_id, 0)) < int(wanted[card_id]) \
-				and GameState.coins >= GameState.rules.swap_cost + 2:
-			var out := _weakest_card()
-			if out == "":
+	_choose_rewards()
+
+
+## Card wishes: card id -> copies the bot wants in its deck (earlier = more important).
+const WANTED := {"auto_mine": 3, "halt": 2, "mine_silver_twin": 2, "mine_gold": 3,
+	"mine_silver": 3, "rail_fff": 2, "rail_ff": 4, "flag_pointy": 1}
+
+
+## Every card choice: the most wanted offered card in for a curse or the weakest card,
+## coins if nothing is wanted.
+func _choose_rewards() -> void:
+	var guard := 0
+	while GameState.pending_rewards > 0 and guard < 10:
+		guard += 1
+		var counts := GameState.deck_counts()
+		var pick := ""
+		for card_id: String in WANTED:
+			if GameState.reward_offer().has(card_id) and int(counts.get(card_id, 0)) < int(WANTED[card_id]):
+				pick = card_id
 				break
-			game.swap_card(out, card_id)
-			_log("  swapped %s -> %s" % [out, card_id])
+		var out := ""
+		for card_id: String in counts:
+			if GameState.is_curse(card_id):
+				out = card_id
+		if out == "":
+			out = _weakest_card()
+		if pick == "" or out == "" or not game.choose_reward(pick, out):
+			game.choose_reward_coins()
+			_log("  reward: coins")
+		else:
+			_log("  reward: %s for %s" % [pick, out])
 
 
 func _weakest_card() -> String:

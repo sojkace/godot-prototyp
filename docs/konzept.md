@@ -48,22 +48,22 @@ Knapp sind Aktionen, Platz und die Karten auf der Hand.
 
 ## Deck
 - **Echter Stapel** mit **fester Größe**. Ist er leer, wird der Ablagestapel neu gemischt.
-- Man entscheidet selbst, welche Karten im Deck sind: Eine neue Karte rein heißt, eine andere
-  muss raus (wie ein Sammelkarten-Deck). Tauschen geht **jederzeit** im Deck-Fenster und
-  **kostet Münzen**.
+- **Kartenwahl nach jedem erfüllten Auftrag:** 3 Karten aus der Sammlung stehen zur Wahl. Man
+  nimmt eine und wählt selbst, welche Deck-Karte dafür rausfliegt (feste Größe). Statt einer
+  Karte kann man 2 Münzen nehmen. Das Deck-Fenster ist nur noch zum Anschauen.
 - **Fluchkarten** (z. B. Wasser, Schutt) aus verpassten Aufträgen belegen einen Platz im Deck,
-  bis man sie loswird. Auf der Hand verstopfen sie einen Platz, bis man sie legt (1 Aktion)
+  bis man sie bei einer Kartenwahl als „raus“ wählt. Auf der Hand verstopfen sie einen Platz, bis man sie legt (1 Aktion)
   oder für Münzen wegwirft.
 
 ## Fortschritt und Währungen
 | Was | Woher | Wofür |
 |---|---|---|
 | Erz | Minen | Aufträge erfüllen |
-| Münzen | erfüllte Aufträge (3 pro Auftrag) | Bombe, Brücke, Karte wegwerfen, Deck umbauen |
+| Münzen | erfüllte Aufträge (3 pro Auftrag), Kartenwahl | Bombe, Brücke, Handkarte wegwerfen |
 | Forschungspunkte | **Meilensteine** (z. B. 10 Aufträge, 50 Felder Insel) | neue Kartenarten freischalten, darunter alle Automaten; selten +1 Aktion |
 
-**Automatisierung** gibt es nur als Karte: Erforschen legt sie einmal direkt ins Deck (sie
-ersetzt die häufigste Karte), weitere Kopien kosten Münzen. Dann ziehen und auf ein Gebäude spielen.
+**Automatisierung** gibt es nur als Karte: Erforschen nimmt sie in die Sammlung auf, bei der
+nächsten Kartenwahl steht sie zuerst zur Auswahl. Dann ziehen und auf ein Gebäude spielen.
 
 | Handarbeit (1 Aktion) | Automat-Karte (Idee) |
 |---|---|
@@ -80,8 +80,11 @@ ersetzt die häufigste Karte), weitere Kopien kosten Münzen. Dann ziehen und au
 - **Jede Fabrik hat einen Typ** (Gold-Fabrik, Silber-Fabrik, später Waren aus der Werkstatt).
   Man muss also die passende Mine an die Strecke der passenden Fabrik bauen.
 - **Es wird immer schwerer:** Jeder erfüllte Auftrag macht den nächsten derselben Fabrik um 1
-  größer (5 → 6 → 7 …). Jede neue Fabrik startet 3 höher als die vorige.
+  größer (4 → 5 → 6 …). Jede neue Fabrik startet wieder klein bei 4; der Druck kommt aus der
+  Zahl der Fabriken.
 - **Neue Fabriken** kommen, wenn die Insel um 12 Felder wächst, spätestens aber alle 8 Runden.
+  Sie werden **2 Runden vorher angekündigt** (kleines Modell, Feld reserviert), ihr erster
+  Auftrag hat **8 Runden** Zeit.
 
 ## Zahlen zum Ausprobieren (Startwerte in `GameRules`)
 | Wert | Start |
@@ -91,7 +94,7 @@ ersetzt die häufigste Karte), weitere Kopien kosten Münzen. Dann ziehen und au
 | Deck-Größe | 20 |
 | Erz pro Schiene im Minenbereich | 1 (Zug fasst 4) |
 | Auftragsfrist | 5 Runden |
-| Karte im Deck tauschen | 2 Münzen, Fluchkarte entfernen teurer |
+| Kartenwahl | nach jedem Auftrag 1 von 3 Karten (oder 2 Münzen) |
 
 ## Erster spielbarer Schritt (Vorschlag)
 Querformat, eine Fabrik mit Auftrag, Züge auf jede Schiene, Hand mit 3 Karten,
@@ -103,7 +106,7 @@ darunter eine Automaten-Karte. Ziel: prüfen, ob sich der Kreislauf von „von H
 Auf diesem Branch spielbar (Menü → „Neues Spiel“, Querformat):
 - Runden mit **3 Aktionen** (Karte legen, Mine antippen, Zug schicken). Die Hand wird nur auf
   **3 Karten aufgefüllt**; „Neu“ tauscht eine Handkarte für 1 Münze. Keine Items.
-  Deck mit fester Größe (20), Deck-Fenster zum Tauschen.
+  Deck mit fester Größe (20); nach jedem Auftrag eine Kartenwahl (1 von 3, eine Karte raus).
 - **Freie Strecken:** Schienen-Blöcke dürfen überall beginnen, beide Enden müssen weiterführen
   (freie Erde, Fabrik oder passendes Gleisende).
 - **Züge:** Schiene antippen = Zug losschicken (1 Aktion), überall, kein Bahnhof. Die Strecke muss
@@ -112,7 +115,8 @@ Auf diesem Branch spielbar (Menü → „Neues Spiel“, Querformat):
   1 pro Schiene im Minenbereich (`loads_per_mine_step`).
 - **Fabriken** (Gold/Silber) mit Auftrag und Frist; verpasst = Fluchkarte „Überflutung“ ersetzt
   eine Deck-Karte. Neue Fabrik alle 12 neuen Landfelder, spätestens alle 8 Runden
-  (`rounds_per_factory`); jede startet 3 höher, jeder erfüllte Auftrag macht den nächsten
+  (`rounds_per_factory`), 2 Runden vorher angekündigt (`factory_warning_rounds`); jede startet
+  bei 4 mit 8 Runden Frist (`first_order_deadline`), jeder erfüllte Auftrag macht den nächsten
   um 1 größer (`order_growth_per_order`). 3 Münzen pro Auftrag.
 - **Forschung** über Meilensteine: Förderband (Mine automatisch), Haltepunkt (auf eine Schiene
   gelegt, Zug startet dort automatisch),
@@ -126,8 +130,8 @@ Auf diesem Branch spielbar (Menü → „Neues Spiel“, Querformat):
   Fabrik mit dem größten Bedarf)? Eigene Karte, Forschung oder Upgrade auf eine Schiene?
   Technisch: `Rail` hat bisher genau zwei Öffnungen, `RailNetwork.route` sucht den kürzesten Weg.
 
-Bot-Werte Standard (40 Runden, 6 Spiele; wachsende Aufträge, Fabrik spätestens alle 8 Runden,
-3 Münzen pro Auftrag, erforschte Karten kommen einmal direkt ins Deck): Ø 11 Aufträge erfüllt,
-16 verpasst, 6 Fabriken, erste Automatisierung in allen Spielen ab Runde ≈ 16.
-Der Bot kommt mit den vielen Fabriken nicht hinterher – beim Anspielen prüfen, ob es Menschen
-auch so geht (dann z. B. `rounds_per_factory` auf 10 oder `order_deadline` auf 6).
+Bot-Werte Standard (40 Runden, 6 Spiele; Kartenwahl nach jedem Auftrag, Fabriken starten bei 4,
+2 Runden Ankündigung, 8 Runden für den ersten Auftrag): Ø 9 Aufträge erfüllt, 15 verpasst,
+6 Fabriken, erste Automatisierung in allen Spielen ab Runde ≈ 25.
+Der Bot kommt mit vielen Fabriken weiter nicht hinterher; er plant Strecken aber deutlich
+schlechter als ein Mensch. Beim Anspielen prüfen, ob es Menschen auch so geht.

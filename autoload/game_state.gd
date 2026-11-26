@@ -11,6 +11,8 @@ signal actions_changed(value: int)
 signal cards_changed
 ## Research points, finished research or collection changed.
 signal research_changed
+## A card choice became due or was made (see pending_rewards).
+signal rewards_changed
 signal milestone_reached(milestone: Dictionary)
 
 const RULES_DIR := "res://data/rules/"
@@ -45,6 +47,12 @@ var discard_pile: Array[String] = []
 ## Card ids that may be swapped into the deck.
 var collection: Array[String] = []
 var research_points := 0
+## Card choices waiting for the player (one per finished order).
+var pending_rewards := 0
+## The current choice: GameRules.reward_choices card ids (empty until asked for).
+var _offer: Array[String] = []
+## Freshly researched cards; they come first in the next card choice.
+var _fresh_cards: Array[String] = []
 ## Ids of finished research entries.
 var researched: Array[String] = []
 
@@ -92,6 +100,9 @@ func reset() -> void:
 	collection = rules.start_collection.duplicate()
 	research_points = 0
 	researched.clear()
+	pending_rewards = 0
+	_offer.clear()
+	_fresh_cards.clear()
 	stats = {"orders_done": 0, "orders_missed": 0, "trains_sent": 0, "cards_played": 0,
 		"land": 0, "factories": 0, "manual_actions": 0, "curses": 0}
 	_milestones_done.clear()
@@ -103,6 +114,7 @@ func reset() -> void:
 	actions = max_actions()
 	cards_changed.emit()
 	research_changed.emit()
+	rewards_changed.emit()
 
 
 # --- Round & actions ---
@@ -183,13 +195,7 @@ func do_research(entry: Dictionary) -> void:
 	for card_id: String in entry.get("unlocks", []):
 		if not collection.has(card_id):
 			collection.append(card_id)
-		# One free copy goes straight into the deck, replacing the most common normal card.
-		var out := _most_common_card()
-		if out != "":
-			_replace_one(out, card_id)
-			Events.message.emit("%s ist jetzt im Deck (statt %s)" % [CardShape.card_name(card_id), CardShape.card_name(out)])
-	if not entry.get("unlocks", []).is_empty():
-		cards_changed.emit()
+			_fresh_cards.append(card_id)
 	if entry.has("actions"):
 		actions += int(entry["actions"])
 	research_changed.emit()
@@ -250,32 +256,55 @@ func is_curse(card_id: String) -> bool:
 	return CardShape.definition(card_id).get("curse", false)
 
 
-func swap_price(out_card: String) -> int:
-	return rules.curse_swap_cost if is_curse(out_card) else rules.swap_cost
+# --- Card choice (after every finished order) ---
+
+func add_reward() -> void:
+	pending_rewards += 1
+	rewards_changed.emit()
 
 
-func can_swap(out_card: String, in_card: String) -> bool:
-	return out_card != in_card and deck_counts().has(out_card) and collection.has(in_card) \
-		and coins >= swap_price(out_card)
+## The cards of the current choice: freshly researched ones first, the rest at random
+## from the collection (no curses, nothing from GameRules.reward_excluded).
+func reward_offer() -> Array[String]:
+	if pending_rewards <= 0:
+		return []
+	if _offer.is_empty():
+		for card_id in _fresh_cards:
+			if _offer.size() < rules.reward_choices:
+				_offer.append(card_id)
+		var pool: Array[String] = []
+		for card_id in collection:
+			if not is_curse(card_id) and not rules.reward_excluded.has(card_id) and not _offer.has(card_id):
+				pool.append(card_id)
+		pool.shuffle()
+		while _offer.size() < rules.reward_choices and not pool.is_empty():
+			_offer.append(pool.pop_back())
+	return _offer
 
 
-## Replaces one copy of `out_card` in the deck with `in_card` (deck size stays the same).
-func swap_card(out_card: String, in_card: String) -> void:
-	if not can_swap(out_card, in_card):
-		return
-	coins -= swap_price(out_card)
+## Takes `in_card` from the offer into the deck in place of one copy of `out_card`.
+func choose_reward(in_card: String, out_card: String) -> bool:
+	if not reward_offer().has(in_card) or not deck_counts().has(out_card):
+		return false
 	_replace_one(out_card, in_card)
+	_fresh_cards.erase(in_card)
+	_finish_reward()
 	cards_changed.emit()
+	return true
 
 
-## The normal card with the most copies in the deck ("" if there is none).
-func _most_common_card() -> String:
-	var best := ""
-	var counts := deck_counts()
-	for card_id: String in counts:
-		if not is_curse(card_id) and (best == "" or int(counts[card_id]) > int(counts[best])):
-			best = card_id
-	return best
+## Takes GameRules.reward_coins instead of a card.
+func choose_reward_coins() -> void:
+	if pending_rewards <= 0:
+		return
+	coins += rules.reward_coins
+	_finish_reward()
+
+
+func _finish_reward() -> void:
+	pending_rewards -= 1
+	_offer.clear()
+	rewards_changed.emit()
 
 
 ## An expired order: a random normal card of the deck turns into a curse card.

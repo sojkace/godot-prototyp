@@ -35,6 +35,11 @@ func refresh() -> void:
 	_column.add_child(_title("Aufträge"))
 	if island:
 		for factory in island.factories:
+			if not factory.is_open():
+				var soon := _line("%s-Fabrik kommt in %d R" % [GameData.item_name(factory.ore), factory.opens_in])
+				soon.modulate = Color(0.75, 0.85, 1.0)
+				_column.add_child(soon)
+				continue
 			var row := HBoxContainer.new()
 			row.add_child(UiKit.icon(GameData.icon(factory.ore), Vector2(28, 28)))
 			var text := UiKit.label(17, "%s  %d/%d  ·  noch %d R" % [GameData.item_name(factory.ore),

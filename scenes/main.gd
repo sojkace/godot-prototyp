@@ -8,7 +8,7 @@ extends Node3D
 ## The public functions below are the player's actions; the HUD and the AutoplayBot both
 ## use them, so a rule change only has to be made here once.
 ## Screenshot helpers: `-- --demo-build` (placement mode), `-- --demo-card=<card id>`
-## (preview a card), `-- --demo-panel=deck|research`.
+## (preview a card), `-- --demo-panel=deck|research|reward`.
 
 ## The player may act (start of the game and after every round).
 signal turn_ready
@@ -40,7 +40,8 @@ func _ready() -> void:
 	hud.confirm_pressed.connect(confirm_placing)
 	hud.cancel_pressed.connect(cancel_placing)
 	hud.research_pressed.connect(research)
-	hud.swap_pressed.connect(swap_card)
+	hud.reward_card_pressed.connect(choose_reward)
+	hud.reward_coins_pressed.connect(choose_reward_coins)
 	build.placement_changed.connect(hud.set_placement)
 	build.cell_tapped.connect(tap_cell)
 	trains.round_finished.connect(_on_round_finished)
@@ -54,6 +55,8 @@ func _ready() -> void:
 			start_placing.call_deferred(0)
 		elif arg.begins_with("--demo-card="):
 			build.start.call_deferred(arg.trim_prefix("--demo-card="))
+		elif arg == "--demo-panel=reward":
+			GameState.add_reward.call_deferred()
 		elif arg.begins_with("--demo-panel="):
 			hud.open_panel.call_deferred(arg.trim_prefix("--demo-panel="))
 	turn_ready.emit.call_deferred()
@@ -202,9 +205,14 @@ func research(index: int) -> void:
 		GameState.do_research(GameState.rules.research[index])
 
 
-func swap_card(out_card: String, in_card: String) -> void:
+## Card choice after a finished order: `in_card` from the offer replaces one `out_card`.
+func choose_reward(in_card: String, out_card: String) -> bool:
+	return not trains.running and GameState.choose_reward(in_card, out_card)
+
+
+func choose_reward_coins() -> void:
 	if not trains.running:
-		GameState.swap_card(out_card, in_card)
+		GameState.choose_reward_coins()
 
 
 ## Ends the planning phase: halts send their trains, then all trains drive.

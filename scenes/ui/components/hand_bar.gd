@@ -54,7 +54,7 @@ func _make_card(slot: int, card_id: String) -> Control:
 	button.custom_minimum_size = CARD_SIZE
 	button.disabled = locked or GameState.actions <= 0
 	button.pressed.connect(card_pressed.emit.bind(slot))
-	button.tooltip_text = _tooltip(card_id)
+	button.tooltip_text = tooltip(card_id)
 	var inner := VBoxContainer.new()
 	inner.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 6)
 	inner.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -86,7 +86,7 @@ func _make_card(slot: int, card_id: String) -> Control:
 	return column
 
 
-static func _tooltip(card_id: String) -> String:
+static func tooltip(card_id: String) -> String:
 	var def := CardShape.definition(card_id)
 	if def.get("upgrade", "") == "halt":
 		return "Auf eine Schiene legen: dort fährt jede Runde ein Zug los (ohne Aktion)"

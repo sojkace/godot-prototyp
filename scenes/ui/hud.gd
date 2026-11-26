@@ -3,7 +3,7 @@ extends CanvasLayer
 ## Landscape screen layout (built in code) and coordinator of the UI components:
 ##   top bar (coins, actions, research points, round, Deck / Forschung / pause),
 ##   OrdersPanel (left), HandBar + ShopBar + "Runde beenden" (bottom), placement row,
-##   toast, DeckPanel, ResearchPanel, PauseMenu.
+##   toast, RewardPanel (card choice), DeckPanel, ResearchPanel, PauseMenu.
 ## The HUD never changes game state itself; it only emits signals that main.gd handles.
 
 signal end_round_pressed
@@ -16,7 +16,8 @@ signal rotate_pressed
 signal confirm_pressed
 signal cancel_pressed
 signal research_pressed(index: int)
-signal swap_pressed(out_card: String, in_card: String)
+signal reward_card_pressed(in_card: String, out_card: String)
+signal reward_coins_pressed
 
 var _running := false
 var _placing := false
@@ -35,6 +36,7 @@ var _confirm_button: Button
 var _orders: OrdersPanel
 var _toast: Label
 var _deck_panel: DeckPanel
+var _reward_panel: RewardPanel
 var _research_panel: ResearchPanel
 var _pause_menu: PauseMenu
 
@@ -64,8 +66,13 @@ func _ready() -> void:
 
 	_deck_panel = DeckPanel.new()
 	add_child(_deck_panel)
-	_deck_panel.swap_requested.connect(swap_pressed.emit)
 	_deck_panel.visibility_changed.connect(_on_dialog_closed)
+	_reward_panel = RewardPanel.new()
+	add_child(_reward_panel)
+	_reward_panel.card_chosen.connect(reward_card_pressed.emit)
+	_reward_panel.coins_chosen.connect(reward_coins_pressed.emit)
+	_reward_panel.visibility_changed.connect(_on_dialog_closed)
+	GameState.rewards_changed.connect(_check_reward.call_deferred)
 	_research_panel = ResearchPanel.new()
 	add_child(_research_panel)
 	_research_panel.research_requested.connect(research_pressed.emit)
@@ -87,8 +94,10 @@ func _ready() -> void:
 	Events.order_expired.connect(func(f: Factory) -> void:
 		show_toast("Auftrag verpasst (%s)\nEine Fluchkarte kommt ins Deck" % GameData.item_name(f.ore)))
 	Events.factory_appeared.connect(func(f: Factory) -> void:
-		if f.factory_index > 0:
-			show_toast("Neue Fabrik: %s" % GameData.item_name(f.ore)))
+		if not f.is_open():
+			show_toast("Neue %s-Fabrik kommt in %d Runden" % [GameData.item_name(f.ore), f.opens_in]))
+	Events.factory_opened.connect(func(f: Factory) -> void:
+		show_toast("%s-Fabrik ist offen: erster Auftrag %d" % [GameData.item_name(f.ore), f.order_amount]))
 	_refresh()
 
 
@@ -168,6 +177,21 @@ func set_running(running: bool) -> void:
 	_hand_bar.locked = running
 	_shop_bar.locked = running
 	_refresh()
+	_check_reward()
+
+
+## Opens the card choice while one is waiting and the trains are not driving.
+func _check_reward() -> void:
+	if GameState.pending_rewards <= 0:
+		_reward_panel.hide()
+	elif not _running and not _reward_panel.visible:
+		cancel_pressed.emit()
+		_deck_panel.hide()
+		_research_panel.hide()
+		_bottom.hide()
+		_reward_panel.open()
+	elif _reward_panel.visible:
+		_reward_panel.refresh_later()
 
 
 func set_placement(active: bool, valid: bool, can_rotate: bool) -> void:
@@ -190,7 +214,7 @@ func show_toast(text: String) -> void:
 
 ## "deck" or "research".
 func open_panel(panel_name: String) -> void:
-	if _running:
+	if _running or _reward_panel.visible:
 		return
 	cancel_pressed.emit()
 	_bottom.hide()
@@ -202,7 +226,7 @@ func open_panel(panel_name: String) -> void:
 
 
 func _on_dialog_closed() -> void:
-	if not _deck_panel.visible and not _research_panel.visible:
+	if not _deck_panel.visible and not _research_panel.visible and not _reward_panel.visible:
 		_bottom.show()
 
 

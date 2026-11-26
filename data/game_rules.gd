@@ -27,15 +27,18 @@ extends Resource
 	"rail_f": 3, "rail_l": 3, "rail_ff": 3, "rail_fl": 2, "rail_lf": 1, "rail_ll": 1,
 	"mine_gold": 2, "mine_silver": 2, "flag_normal": 2, "pond": 1,
 }
-## Cards that can be swapped into the deck without research.
+## Cards that can show up in the card choice without research.
 @export var start_collection: Array[String] = [
 	"rail_f", "rail_l", "rail_ff", "rail_fl", "rail_lf", "rail_ll", "rail_lr",
 	"mine_gold", "mine_silver", "flag_normal", "pond",
 ]
-## Coins to swap one deck card for another card of the collection.
-@export var swap_cost := 2
-## Coins to swap out a curse card (it replaced a normal card when an order expired).
-@export var curse_swap_cost := 4
+## After every finished order the player picks one of this many collection cards and
+## chooses a deck card it replaces (the deck size stays the same) ...
+@export var reward_choices := 3
+## ... or takes this many coins instead.
+@export var reward_coins := 2
+## Collection cards that never show up in the card choice (they only hinder).
+@export var reward_excluded: Array[String] = ["pond"]
 ## Card put into the deck (replacing a random normal card) when an order expires.
 @export var curse_card := "curse_flood"
 
@@ -99,8 +102,8 @@ extends Resource
 	{"name": "3 Fabriken", "stat": "factories", "target": 3, "points": 1},
 	{"name": "5 Fabriken", "stat": "factories", "target": 5, "points": 2},
 ]
-## Research: costs points, unlocks cards for the collection (one free copy of each goes straight
-## into the deck, replacing the most common card) and/or gives extra actions.
+## Research: costs points, unlocks cards for the collection (they show up first in the next
+## card choice) and/or gives extra actions.
 @export var research: Array[Dictionary] = [
 	{"id": "conveyor", "name": "Förderband", "cost": 2, "unlocks": ["auto_mine"],
 		"description": "Minen füllen sich jede Runde selbst."},
@@ -125,13 +128,17 @@ extends Resource
 ## Factories appear between these distances (steps) from the middle of the start setup.
 @export var factory_min_distance := 4
 @export var factory_max_distance := 7
-## Order size of the first factory; every later factory wants `order_growth` more.
-@export var order_base := 5
-@export var order_growth := 3
+## First order size of a factory; every later factory starts `order_growth` higher.
+@export var order_base := 4
+@export var order_growth := 0
 ## Every finished order makes the next order of the same factory this much bigger.
 @export var order_growth_per_order := 1
 ## Rounds until an order expires (then a curse card goes into the deck).
 @export var order_deadline := 5
+## Rounds for the very first order of a new factory (time to build its line).
+@export var first_order_deadline := 8
+## A new factory is announced this many rounds before it opens (its cell is reserved).
+@export var factory_warning_rounds := 2
 ## Rewards: coins per delivered load and per finished order.
 @export var coins_per_load := 0
 @export var coins_per_order := 3

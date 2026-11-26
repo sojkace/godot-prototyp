@@ -178,7 +178,8 @@ func spawn_factory() -> Factory:
 		buildings.erase(c)
 		old.queue_free()
 	var factory := GameData.building_scene("factory").instantiate() as Factory
-	factory.setup(ore, index)
+	# The first factory is open from the start, later ones are announced first.
+	factory.setup(ore, index, 0 if index == 0 else rules.factory_warning_rounds)
 	_add(factory, c)
 	factories.append(factory)
 	GameState.set_stat("factories", factories.size())
