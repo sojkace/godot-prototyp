@@ -6,5 +6,6 @@
 [node name="MineSilver" type="Node3D"]
 script = ExtResource("1_script")
 area_shape = "cross"
+ore = "silver"
 
 [node name="Model" parent="." instance=ExtResource("2_model")]

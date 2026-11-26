@@ -33,6 +33,7 @@ ICONS = {
     "train": "train_1_4",
     "train_big": "train_2_8",
     "power_station": "power_station",
+    "water": "wather",
 }
 
 scene = bpy.context.scene

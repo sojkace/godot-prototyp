@@ -6,6 +6,5 @@
 [node name="RailStraight" type="Node3D"]
 script = ExtResource("1_script")
 kind = 0
-rotatable = true
 
 [node name="Model" parent="." instance=ExtResource("2_model")]

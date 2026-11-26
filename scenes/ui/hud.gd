@@ -1,80 +1,197 @@
 class_name Hud
 extends CanvasLayer
-## Screen layout and coordinator of the UI components:
-##   top bar (coins, hearts, round, pause button), InventoryBar, CardBar, placement row,
-##   start button, toast, MarketPanel, PauseMenu and game-over panel.
+## Landscape screen layout (built in code) and coordinator of the UI components:
+##   top bar (coins, actions, research points, round, Deck / Forschung / pause),
+##   OrdersPanel (left), HandBar + ShopBar + "Runde beenden" (bottom), placement row,
+##   toast, RewardPanel (card choice), DeckPanel, ResearchPanel, PauseMenu.
 ## The HUD never changes game state itself; it only emits signals that main.gd handles.
 
-signal start_pressed
+signal end_round_pressed
 signal restart_pressed
-signal card_pressed(deck_id: String)
-signal discard_pressed(deck_id: String)
+signal menu_pressed
+signal card_pressed(slot: int)
+signal discard_pressed(slot: int)
+signal tool_pressed(card_id: String)
 signal rotate_pressed
 signal confirm_pressed
 signal cancel_pressed
-signal menu_pressed
-
-@onready var _coins_label: Label = %CoinsLabel
-@onready var _hearts_label: Label = %HeartsLabel
-@onready var _round_label: Label = %RoundLabel
-@onready var _bottom: Control = %Bottom
-@onready var _card_bar: CardBar = %CardRow
-@onready var _place_row: Control = %PlaceRow
-@onready var _rotate_button: Button = %RotateButton
-@onready var _confirm_button: Button = %ConfirmButton
-@onready var _start_button: Button = %StartButton
-@onready var _toast: Label = %Toast
-@onready var _game_over_panel: Control = %GameOverPanel
-@onready var _game_over_label: Label = %GameOverLabel
+signal research_pressed(index: int)
+signal reward_card_pressed(in_card: String, out_card: String)
+signal reward_coins_pressed
 
 var _running := false
 var _placing := false
 var _toast_tween: Tween
-var _market_panel: MarketPanel
+var _coins_label: Label
+var _actions_label: Label
+var _research_button: Button
+var _round_label: Label
+var _bottom: Control
+var _hand_bar: HandBar
+var _shop_bar: ShopBar
+var _end_button: Button
+var _place_row: HBoxContainer
+var _rotate_button: Button
+var _confirm_button: Button
+var _orders: OrdersPanel
+var _toast: Label
+var _deck_panel: DeckPanel
+var _reward_panel: RewardPanel
+var _research_panel: ResearchPanel
 var _pause_menu: PauseMenu
-## Items delivered this frame, collected so several workshops give one toast.
-var _pending_delivery: Array[String] = []
 
 
 func _ready() -> void:
 	# The HUD keeps working while the game is paused (pause menu).
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	var root := Control.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(root)
+	_build_top_bar(root)
+	_build_bottom(root)
 
-	_market_panel = MarketPanel.new()
-	add_child(_market_panel)
-	_market_panel.closed.connect(_on_market_closed)
-	_market_panel.traded.connect(show_toast)
+	_orders = OrdersPanel.new()
+	_orders.position = Vector2(10, 66)
+	root.add_child(_orders)
 
+	_toast = UiKit.label(26)
+	_toast.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_toast.position.y = 90
+	_toast.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_toast.add_theme_constant_override("outline_size", 8)
+	_toast.add_theme_color_override("font_outline_color", Color(0.05, 0.05, 0.1))
+	_toast.modulate.a = 0.0
+	root.add_child(_toast)
+
+	_deck_panel = DeckPanel.new()
+	add_child(_deck_panel)
+	_deck_panel.visibility_changed.connect(_on_dialog_closed)
+	_reward_panel = RewardPanel.new()
+	add_child(_reward_panel)
+	_reward_panel.card_chosen.connect(reward_card_pressed.emit)
+	_reward_panel.coins_chosen.connect(reward_coins_pressed.emit)
+	_reward_panel.visibility_changed.connect(_on_dialog_closed)
+	GameState.rewards_changed.connect(_check_reward.call_deferred)
+	_research_panel = ResearchPanel.new()
+	add_child(_research_panel)
+	_research_panel.research_requested.connect(research_pressed.emit)
+	_research_panel.visibility_changed.connect(_on_dialog_closed)
 	_pause_menu = PauseMenu.new()
 	add_child(_pause_menu)
 	_pause_menu.restart_pressed.connect(restart_pressed.emit)
 	_pause_menu.menu_pressed.connect(menu_pressed.emit)
-	var pause_button := UiKit.button(" II ", _pause_menu.set_paused.bind(true), 22, 0.0)
-	_round_label.get_parent().add_child(pause_button)
-	%RestartButton.get_parent().add_child(UiKit.button("Hauptmenü", menu_pressed.emit))
 
-	_card_bar.card_pressed.connect(card_pressed.emit)
-	_card_bar.discard_pressed.connect(discard_pressed.emit)
-	_start_button.pressed.connect(start_pressed.emit)
-	%RestartButton.pressed.connect(restart_pressed.emit)
-	_rotate_button.pressed.connect(rotate_pressed.emit)
-	_confirm_button.pressed.connect(confirm_pressed.emit)
-	%CancelButton.pressed.connect(cancel_pressed.emit)
-
-	GameState.coins_changed.connect(func(_v: int) -> void: _refresh())
-	GameState.hearts_changed.connect(func(_v: int) -> void: _refresh())
-	GameState.round_changed.connect(func(_v: int) -> void: _refresh())
-	Events.items_delivered.connect(_on_items_delivered)
-
-	_game_over_panel.hide()
-	_toast.modulate.a = 0.0
+	GameState.coins_changed.connect(_refresh.unbind(1))
+	GameState.actions_changed.connect(_refresh.unbind(1))
+	GameState.round_changed.connect(_refresh.unbind(1))
+	GameState.research_changed.connect(_refresh)
+	GameState.milestone_reached.connect(func(m: Dictionary) -> void:
+		show_toast("Meilenstein: %s\n+%d Forschungspunkte" % [m["name"], int(m["points"])]))
+	Events.message.connect(show_toast)
+	Events.order_done.connect(func(f: Factory) -> void:
+		show_toast("Auftrag erfüllt: %s" % GameData.item_name(f.ore)))
+	Events.order_expired.connect(func(f: Factory) -> void:
+		show_toast("Auftrag verpasst (%s)\nEine Fluchkarte kommt ins Deck" % GameData.item_name(f.ore)))
+	Events.factory_appeared.connect(func(f: Factory) -> void:
+		if not f.is_open():
+			show_toast("Neue %s-Fabrik kommt in %d Runden" % [GameData.item_name(f.ore), f.opens_in]))
+	Events.factory_opened.connect(func(f: Factory) -> void:
+		show_toast("%s-Fabrik ist offen: erster Auftrag %d" % [GameData.item_name(f.ore), f.order_amount]))
 	_refresh()
+
+
+func _build_top_bar(root: Control) -> void:
+	var bar := PanelContainer.new()
+	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	bar.offset_bottom = 56
+	root.add_child(bar)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 14)
+	margin.add_theme_constant_override("margin_right", 14)
+	bar.add_child(margin)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 22)
+	margin.add_child(row)
+	_coins_label = UiKit.label(22)
+	row.add_child(_coins_label)
+	_actions_label = UiKit.label(22)
+	row.add_child(_actions_label)
+	_round_label = UiKit.label(22)
+	_round_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_round_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(_round_label)
+	row.add_child(UiKit.button("Deck", open_panel.bind("deck"), 20, 44.0))
+	_research_button = UiKit.button("Forschung", open_panel.bind("research"), 20, 44.0)
+	row.add_child(_research_button)
+	row.add_child(UiKit.button(" II ", func() -> void: _pause_menu.set_paused(true), 20, 44.0))
+
+
+func _build_bottom(root: Control) -> void:
+	_bottom = MarginContainer.new()
+	_bottom.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	_bottom.offset_top = -232
+	_bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for side in ["left", "right", "bottom"]:
+		_bottom.add_theme_constant_override("margin_" + side, 12)
+	root.add_child(_bottom)
+	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.alignment = BoxContainer.ALIGNMENT_END
+	row.add_theme_constant_override("separation", 16)
+	_bottom.add_child(row)
+
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(spacer)
+	_hand_bar = HandBar.new()
+	_hand_bar.size_flags_vertical = Control.SIZE_SHRINK_END
+	_hand_bar.card_pressed.connect(card_pressed.emit)
+	_hand_bar.discard_pressed.connect(discard_pressed.emit)
+	row.add_child(_hand_bar)
+
+	_place_row = HBoxContainer.new()
+	_place_row.size_flags_vertical = Control.SIZE_SHRINK_END
+	_place_row.add_theme_constant_override("separation", 10)
+	_rotate_button = UiKit.button("Drehen", rotate_pressed.emit, 24, 64.0)
+	_confirm_button = UiKit.button("Bauen", confirm_pressed.emit, 24, 64.0)
+	for button in [_rotate_button, _confirm_button, UiKit.button("Abbrechen", cancel_pressed.emit, 24, 64.0)]:
+		button.custom_minimum_size.x = 170
+		_place_row.add_child(button)
+	row.add_child(_place_row)
+
+	var side := VBoxContainer.new()
+	side.size_flags_vertical = Control.SIZE_SHRINK_END
+	side.add_theme_constant_override("separation", 10)
+	_shop_bar = ShopBar.new()
+	_shop_bar.tool_pressed.connect(tool_pressed.emit)
+	side.add_child(_shop_bar)
+	_end_button = UiKit.button("Runde beenden", end_round_pressed.emit, 26, 80.0)
+	side.add_child(_end_button)
+	row.add_child(side)
 
 
 func set_running(running: bool) -> void:
 	_running = running
-	_card_bar.locked = running
+	_hand_bar.locked = running
+	_shop_bar.locked = running
 	_refresh()
+	_check_reward()
+
+
+## Opens the card choice while one is waiting and the trains are not driving.
+func _check_reward() -> void:
+	if GameState.pending_rewards <= 0:
+		_reward_panel.hide()
+	elif not _running and not _reward_panel.visible:
+		cancel_pressed.emit()
+		_deck_panel.hide()
+		_research_panel.hide()
+		_bottom.hide()
+		_reward_panel.open()
+	elif _reward_panel.visible:
+		_reward_panel.refresh_later()
 
 
 func set_placement(active: bool, valid: bool, can_rotate: bool) -> void:
@@ -84,56 +201,46 @@ func set_placement(active: bool, valid: bool, can_rotate: bool) -> void:
 	_refresh()
 
 
-## Short message in the middle of the screen.
+## Short message in the upper middle of the screen.
 func show_toast(text: String) -> void:
 	_toast.text = text
 	if _toast_tween:
 		_toast_tween.kill()
 	_toast.modulate.a = 1.0
 	_toast_tween = create_tween()
-	_toast_tween.tween_interval(1.6)
+	_toast_tween.tween_interval(1.8)
 	_toast_tween.tween_property(_toast, "modulate:a", 0.0, 0.6)
 
 
-func show_game_over(won: bool) -> void:
-	_market_panel.hide()
+## "deck" or "research".
+func open_panel(panel_name: String) -> void:
+	if _running or _reward_panel.visible:
+		return
+	cancel_pressed.emit()
 	_bottom.hide()
-	_game_over_label.text = "Gewonnen! %d Münzen" % GameState.coins if won \
-		else "Keine Herzen mehr.\n%d Münzen" % GameState.coins
-	_game_over_panel.show()
+	match panel_name:
+		"deck":
+			_deck_panel.open()
+		"research":
+			_research_panel.open()
 
 
-func open_market(market: Marketplace) -> void:
-	_bottom.hide()
-	_market_panel.open(market)
-
-
-func _on_market_closed() -> void:
-	if not _game_over_panel.visible:
+func _on_dialog_closed() -> void:
+	if not _deck_panel.visible and not _research_panel.visible and not _reward_panel.visible:
 		_bottom.show()
 
 
-func _on_items_delivered(items: Array[String], _source: Building) -> void:
-	if _pending_delivery.is_empty():
-		_flush_delivery.call_deferred()
-	_pending_delivery.append_array(items)
-
-
-func _flush_delivery() -> void:
-	var names: Array[String] = []
-	for item in _pending_delivery:
-		names.append("+1 " + GameData.item_name(item))
-	_pending_delivery.clear()
-	show_toast("Werkstatt liefert:\n" + ", ".join(names))
-
-
 func _refresh() -> void:
-	_coins_label.text = "Münzen: %d" % GameState.coins
-	_hearts_label.text = "Herzen: %d" % GameState.hearts
-	_round_label.text = "Runde %d/%d · Züge: %d" % [
-		GameState.round_index + 1, GameState.round_count(), GameState.trains_this_round().length()]
+	if _coins_label == null:
+		return
+	_coins_label.text = "Münzen %d" % GameState.coins
+	_actions_label.text = "Aktionen %d/%d" % [GameState.actions, GameState.max_actions()]
+	_actions_label.modulate = Color(1, 0.6, 0.5) if GameState.actions == 0 else Color.WHITE
+	_research_button.text = "Forschung (%d)" % GameState.research_points
+	_round_label.text = "Runde %d" % (GameState.round_index + 1)
 	_place_row.visible = _placing
-	_card_bar.visible = not _placing
-	_start_button.visible = not _placing
-	_start_button.disabled = _running
-	_start_button.text = "Zug fährt …" if _running else "Zug starten"
+	_hand_bar.visible = not _placing
+	_shop_bar.visible = not _placing
+	_end_button.visible = not _placing
+	_end_button.disabled = _running
+	_end_button.text = "Züge fahren …" if _running else "Runde beenden"

@@ -1,10 +1,14 @@
 class_name Main
 extends Node3D
-## Game loop: play a card -> place the building -> start trains -> round ends ->
-## buildings react (on_round_end) -> next round.
+## Game loop (endless, turn-based, see docs/konzept.md):
+##   planning: spend actions (play a hand card, tap a mine, put a train on any rail),
+##             research, swap deck cards
+##   end_round: halts send their trains, all trains drive and deliver
+##   round end: buildings react (on_round_end), hand filled up, actions refill
 ## The public functions below are the player's actions; the HUD and the AutoplayBot both
 ## use them, so a rule change only has to be made here once.
-## Screenshot helpers: `-- --demo-build` (placement mode), `-- --demo-market` (trade window).
+## Screenshot helpers: `-- --demo-build` (placement mode), `-- --demo-card=<card id>`
+## (preview a card), `-- --demo-panel=deck|research|reward`.
 
 ## The player may act (start of the game and after every round).
 signal turn_ready
@@ -14,33 +18,47 @@ signal turn_ready
 @onready var build: BuildController = $BuildController
 @onready var hud: Hud = $Hud
 
-## Deck whose card is currently being placed ("" = none).
-var _pending_deck := ""
+## Hand slot whose card is being placed (-1 = none).
+var _pending_slot := -1
+## Shop tool currently being placed ("" = none), paid with coins on confirm.
+var _pending_tool := ""
+## Trains put on rails this round, waiting for end_round().
+var _waiting_trains: Array[Train] = []
 
 
 func _ready() -> void:
 	GameState.reset()
-	GameState.game_over.connect(_on_game_over)
-	hud.start_pressed.connect(start_round)
+	island.setup()
+	GameState.draw_hand()
+	hud.end_round_pressed.connect(end_round)
 	hud.restart_pressed.connect(restart)
 	hud.menu_pressed.connect(back_to_menu)
 	hud.card_pressed.connect(start_placing)
 	hud.discard_pressed.connect(discard)
+	hud.tool_pressed.connect(start_tool)
 	hud.rotate_pressed.connect(build.rotate_preview)
 	hud.confirm_pressed.connect(confirm_placing)
 	hud.cancel_pressed.connect(cancel_placing)
+	hud.research_pressed.connect(research)
+	hud.reward_card_pressed.connect(choose_reward)
+	hud.reward_coins_pressed.connect(choose_reward_coins)
 	build.placement_changed.connect(hud.set_placement)
-	build.cell_tapped.connect(_on_cell_tapped)
+	build.cell_tapped.connect(tap_cell)
 	trains.round_finished.connect(_on_round_finished)
 	hud.set_running(false)
 
 	var bot := AutoplayBot.from_args(self)
 	if bot:
 		add_child(bot)
-	elif OS.get_cmdline_user_args().has("--demo-market"):
-		_on_cell_tapped.call_deferred(Vector2i(2, -1))
-	elif OS.get_cmdline_user_args().has("--demo-build"):
-		start_placing.call_deferred("buildings")
+	for arg in OS.get_cmdline_user_args():
+		if arg == "--demo-build":
+			start_placing.call_deferred(0)
+		elif arg.begins_with("--demo-card="):
+			build.start.call_deferred(arg.trim_prefix("--demo-card="))
+		elif arg == "--demo-panel=reward":
+			GameState.add_reward.call_deferred()
+		elif arg.begins_with("--demo-panel="):
+			hud.open_panel.call_deferred(arg.trim_prefix("--demo-panel="))
 	turn_ready.emit.call_deferred()
 
 
@@ -50,42 +68,163 @@ func is_round_running() -> bool:
 	return trains.running
 
 
-## Shows the placement preview for the top card of a deck (nothing is paid yet).
-func start_placing(deck_id: String) -> void:
-	if trains.running or not GameState.can_afford(deck_id):
+func can_play(slot: int) -> bool:
+	var card_id := GameState.card_in_slot(slot)
+	return card_id != "" and not trains.running and GameState.actions > 0
+
+
+## Shows the placement preview for a hand card (the action is spent on confirm).
+func start_placing(slot: int) -> void:
+	if GameState.card_in_slot(slot) != "" and GameState.actions <= 0:
+		Events.message.emit("Keine Aktionen mehr in dieser Runde")
+	if not can_play(slot):
 		return
-	_pending_deck = deck_id
-	build.start(GameState.top_card(deck_id))
+	cancel_placing()
+	_pending_slot = slot
+	build.start(GameState.card_in_slot(slot))
 
 
-## Builds the previewed card at the chosen cell and pays for it. False if not possible.
+## Shows the preview for a shop tool (bomb, bridge); coins are paid on confirm.
+func start_tool(card_id: String) -> void:
+	if trains.running or not can_buy(card_id):
+		return
+	cancel_placing()
+	_pending_tool = card_id
+	build.start(card_id)
+
+
+func tool_cost(card_id: String) -> int:
+	return int(CardShape.definition(card_id).get("coins", 0))
+
+
+func can_buy(card_id: String) -> bool:
+	return GameState.coins >= tool_cost(card_id)
+
+
+## Builds the previewed card / uses the tool where it is shown and pays for it.
+## False if not possible.
 func confirm_placing() -> bool:
-	var deck_id := _pending_deck
-	if deck_id == "" or not GameState.can_afford(deck_id):
+	var layout := build.valid_layout()
+	if layout.is_empty():
 		return false
-	if not build.confirm():
+	var slot := _pending_slot
+	var tool_id := _pending_tool
+	cancel_placing()
+	if tool_id != "":
+		return _use_tool(tool_id, layout)
+	return slot >= 0 and _build(slot, layout)
+
+
+## Uses a shop tool directly (no preview), e.g. for the bot.
+func use_tool(card_id: String, c: Vector2i) -> bool:
+	if trains.running or build.active:
 		return false
-	_pending_deck = ""
-	GameState.play_card(deck_id)
+	var layout := CardShape.layout(CardShape.definition(card_id), island, c, 0)
+	if not PlacementRules.is_valid(island, layout, false):
+		return false
+	return _use_tool(card_id, layout)
+
+
+## Builds a hand card directly (no preview), e.g. for the bot. See PlacementRules.options.
+func place_card(slot: int, anchor: Vector2i, steps: int) -> bool:
+	if not can_play(slot) or build.active:
+		return false
+	var def := CardShape.definition(GameState.card_in_slot(slot))
+	var layout := CardShape.layout(def, island, anchor, steps)
+	if not PlacementRules.is_valid(island, layout, CardShape.is_rail(def)):
+		return false
+	return _build(slot, layout)
+
+
+## Taps a cell: a rail gets a train, other buildings do their tap action
+## (fill a mine). Manual work costs one action.
+func tap_cell(c: Vector2i) -> void:
+	if trains.running:
+		return
+	var building := island.buildings.get(c) as Building
+	if building is Rail:
+		send_train(c)
+	elif building:
+		if building.tap_costs_action():
+			if not GameState.spend_action():
+				Events.message.emit("Keine Aktionen mehr in dieser Runde")
+				return
+		building.on_tapped()
+
+
+## Why a train can not start on `c` ("" = it can).
+func train_problem(c: Vector2i) -> String:
+	if not island.buildings.get(c) is Rail:
+		return "Hier ist keine Schiene"
+	var route := RailNetwork.route(island, c)
+	if route.is_empty():
+		return "Diese Strecke führt zu keiner Fabrik"
+	if not _passes_mine(route["path"], (route["factory"] as Factory).ore):
+		return "Der Zug käme an keiner %s vorbei" % GameData.building_name("mine_" + (route["factory"] as Factory).ore)
+	return ""
+
+
+## True if a mine of `ore` covers a cell of `path` (a train there could load something).
+func _passes_mine(path: Array, ore: String) -> bool:
+	for building: Building in island.all_buildings():
+		var mine := building as Mine
+		if mine == null or mine.ore != ore:
+			continue
+		for c: Vector2i in path:
+			if mine.covers(c):
+				return true
+	return false
+
+
+## Puts a train on the rail at `c` (one action).
+func send_train(c: Vector2i) -> bool:
+	var problem := train_problem(c)
+	if problem == "" and GameState.actions <= 0:
+		problem = "Keine Aktionen mehr in dieser Runde"
+	if problem != "":
+		Events.message.emit(problem)
+		return false
+	GameState.spend_action()
+	_dispatch(c)
 	return true
 
 
 func cancel_placing() -> void:
 	build.cancel()
-	_pending_deck = ""
+	_pending_slot = -1
+	_pending_tool = ""
 
 
-func discard(deck_id: String) -> void:
+func discard(slot: int) -> void:
 	if not trains.running and not build.active:
-		GameState.discard_top(deck_id)
+		GameState.discard_slot(slot)
 
 
-func start_round() -> void:
+func research(index: int) -> void:
+	if index >= 0 and index < GameState.rules.research.size():
+		GameState.do_research(GameState.rules.research[index])
+
+
+## Card choice after a finished order: `in_card` from the offer replaces one `out_card`.
+func choose_reward(in_card: String, out_card: String) -> bool:
+	return not trains.running and GameState.choose_reward(in_card, out_card)
+
+
+func choose_reward_coins() -> void:
+	if not trains.running:
+		GameState.choose_reward_coins()
+
+
+## Ends the planning phase: halts send their trains, then all trains drive.
+func end_round() -> void:
 	if trains.running:
 		return
 	cancel_placing()
+	_send_from_halts()
 	hud.set_running(true)
-	trains.run_round(GameState.trains_this_round())
+	var sent := _waiting_trains.duplicate()
+	_waiting_trains.clear()
+	trains.run_round(sent)
 
 
 func restart() -> void:
@@ -100,22 +239,42 @@ func back_to_menu() -> void:
 
 # --- Flow ---
 
-## Tapping a marketplace opens its trade window.
-func _on_cell_tapped(c: Vector2i) -> void:
-	var market := island.buildings.get(c) as Marketplace
-	if market:
-		hud.open_market(market)
+func _dispatch(c: Vector2i) -> void:
+	var route := RailNetwork.route(island, c)
+	_waiting_trains.append(trains.make_train(route["path"], route["factory"]))
+	GameState.add_stat("trains_sent")
+
+
+## Every rail with a halt sends one train for free from exactly that cell.
+func _send_from_halts() -> void:
+	for building: Building in island.all_buildings():
+		var rail := building as Rail
+		if rail and rail.has_halt and train_problem(rail.cell) == "":
+			_dispatch(rail.cell)
+
+
+func _use_tool(card_id: String, layout: Array[Dictionary]) -> bool:
+	if not can_buy(card_id):
+		return false
+	GameState.coins -= tool_cost(card_id)
+	island.place_layout(layout)
+	return true
+
+
+func _build(slot: int, layout: Array[Dictionary]) -> bool:
+	if not can_play(slot):
+		return false
+	GameState.spend_action()
+	GameState.play_slot(slot)
+	island.place_layout(layout)
+	return true
 
 
 func _on_round_finished() -> void:
 	var finished_round := GameState.round_index + 1
-	if not GameState.finish_round():
-		return
 	island.notify_round_end()
+	GameState.next_round()
+	island.round_passed()
 	Events.round_ended.emit(finished_round)
 	hud.set_running(false)
 	turn_ready.emit()
-
-
-func _on_game_over(won: bool) -> void:
-	hud.show_game_over(won)
